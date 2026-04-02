@@ -13,7 +13,10 @@ SampleRate = int
 TimeRange = Tuple[float, float]
 
 
-def load_wav_mono_16k(file_path: Path, target_sample_rate: SampleRate = 16000) -> torch.Tensor:
+def load_wav_mono_16k(
+    file_path: Path,
+    target_sample_rate: SampleRate = 16000,
+) -> torch.Tensor:
     """
     Load a PCM WAV file, convert it to mono float32, and ensure it is already 16 kHz.
     """
@@ -97,21 +100,19 @@ def save_speech_segments(
     return saved_files
 
 
-def main() -> None:
-    input_path = Path("audios/output.wav")
-    output_dir = Path("speech_segments")
-    sample_rate: SampleRate = 16000
+def process_file(
+    input_path: Path,
+    base_output_dir: Path,
+    model: torch.nn.Module,
+    sample_rate: SampleRate,
+) -> None:
+    """
+    Process a single WAV file and save its speech segments into a dedicated subdirectory.
+    """
+    print(f"\n=== Processing: {input_path.name} ===")
 
-    if not input_path.exists():
-        raise FileNotFoundError(f"Input file not found: {input_path}")
-
-    print("Loading model...")
-    model = load_silero_vad()
-
-    print(f"Loading audio: {input_path}")
     audio = load_wav_mono_16k(input_path, target_sample_rate=sample_rate)
 
-    print("Running voice activity detection...")
     speech_timestamps = get_speech_timestamps(
         audio,
         model,
@@ -129,16 +130,48 @@ def main() -> None:
 
     ranges = speech_timestamps_to_seconds(speech_timestamps, sample_rate)
 
-    print("\nDetected speech segments:")
+    print("Detected speech segments:")
     for index, (start_sec, end_sec) in enumerate(ranges, start=1):
         duration = end_sec - start_sec
-        print(f"  #{index:03d}  start={start_sec:.2f}s  end={end_sec:.2f}s  duration={duration:.2f}s")
+        print(
+            f"  #{index:03d}  start={start_sec:.2f}s  end={end_sec:.2f}s  duration={duration:.2f}s"
+        )
 
+    output_dir = base_output_dir / input_path.stem
     saved_files = save_speech_segments(audio, speech_timestamps, output_dir, sample_rate)
 
-    print(f"\nSaved {len(saved_files)} speech segment(s) into: {output_dir.resolve()}")
+    print(f"Saved {len(saved_files)} speech segment(s) into: {output_dir.resolve()}")
     for file_path in saved_files:
         print(f"  - {file_path.name}")
+
+
+def main() -> None:
+    input_dir = Path("audios")
+    output_dir = Path("speech_segments")
+    sample_rate: SampleRate = 16000
+
+    wav_files = sorted(input_dir.glob("*.wav"))
+
+    if not wav_files:
+        raise FileNotFoundError(f"No WAV files found in: {input_dir.resolve()}")
+
+    print("Loading model...")
+    model = load_silero_vad()
+
+    print(f"Found {len(wav_files)} WAV file(s) to process.")
+
+    for wav_file in wav_files:
+        try:
+            process_file(
+                input_path=wav_file,
+                base_output_dir=output_dir,
+                model=model,
+                sample_rate=sample_rate,
+            )
+        except Exception as exc:
+            print(f"Error while processing {wav_file.name}: {exc}")
+
+    print("\nAll files processed.")
 
 
 if __name__ == "__main__":

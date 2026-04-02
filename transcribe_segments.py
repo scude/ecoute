@@ -8,15 +8,9 @@ from faster_whisper import WhisperModel
 
 def iter_audio_files(directory: Path) -> Iterable[Path]:
     """
-    Yield WAV files from a directory in sorted order.
-
-    Args:
-        directory: Directory containing WAV files.
-
-    Yields:
-        Paths to WAV files.
+    Yield WAV files recursively from a directory in sorted order.
     """
-    yield from sorted(directory.glob("*.wav"))
+    yield from sorted(directory.rglob("*.wav"))
 
 
 def transcribe_file(model: WhisperModel, audio_file: Path, language: str = "fr") -> str:

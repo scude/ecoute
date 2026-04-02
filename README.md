@@ -1,13 +1,6 @@
 pip install torch torchaudio silero-vad faster-whisper
 
-pip install faster-whisper
-
-python vad_segment.py
-
-python transcribe_segments.py
-
-conda activate ecoute
-
+# Optionnel: réduction de bruit RNNoise
 sudo apt update
 sudo apt install -y git autoconf automake libtool build-essential pkg-config
 cd ~
@@ -17,4 +10,18 @@ cd rnnoise
 ./configure
 make
 
-pip install librosa
+# 1) Configurer le flux RTSP
+cp .env.sample .env
+# puis éditer .env avec vos accès caméra
+
+# 2) Capturer en continu (24/7) en segments WAV + réessais auto + rétention 7 jours
+bash capture_rtsp_audio.sh
+
+# 3) Segmenter avec VAD (sur les WAV à traiter)
+python vad_segment.py
+
+# 4) Transcrire avec Whisper
+python transcribe_segments.py
+
+
+Note: le script détecte automatiquement si votre version de ffmpeg supporte `-rw_timeout` et désactive cette option sinon.
