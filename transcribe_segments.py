@@ -92,7 +92,7 @@ def main() -> None:
 
     print("Loading faster-whisper model...")
     model = WhisperModel(
-        model_size_or_path="large-v3",
+        model_size_or_path="medium",
         device="cpu",
         compute_type="int8",
     )

@@ -180,6 +180,18 @@ def main() -> None:
     if not wav_files:
         raise FileNotFoundError(f"No WAV files found in: {input_dir.resolve()}")
 
+    # The RTSP capture script always has one segment file currently being written.
+    # Skip the most recently modified WAV file to avoid reading a partial file.
+    file_being_written = max(wav_files, key=lambda path: path.stat().st_mtime)
+    wav_files = [path for path in wav_files if path != file_being_written]
+
+    if not wav_files:
+        print(
+            "Only one WAV file found and it appears to be the file currently being written. "
+            "Nothing to process yet."
+        )
+        return
+
     print("Loading model...")
     model = load_silero_vad()
 
