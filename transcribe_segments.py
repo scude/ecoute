@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Iterable, List
+import re
+from typing import Iterable, List, Optional
 
 from faster_whisper import WhisperModel
+
+
+CAPTURE_STEM_RE = re.compile(r".*?(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})")
+SEGMENT_OFFSET_RE = re.compile(r"_start(\d+)ms_end(\d+)ms\\.wav$")
 
 
 def iter_audio_files(directory: Path) -> Iterable[Path]:
@@ -13,19 +19,37 @@ def iter_audio_files(directory: Path) -> Iterable[Path]:
     yield from sorted(directory.rglob("*.wav"))
 
 
-def transcribe_file(model: WhisperModel, audio_file: Path, language: str = "fr") -> str:
+def parse_capture_start(audio_file: Path) -> Optional[datetime]:
     """
-    Transcribe a single audio file using faster-whisper.
-
-    Args:
-        model: Initialized WhisperModel instance.
-        audio_file: Path to the WAV file.
-        language: Language hint for transcription.
-
-    Returns:
-        Final concatenated transcription text.
+    Parse capture start datetime from parent directory name (source file stem).
+    Example stem: rtsp_audio_2026-04-02_12-30-00
     """
-    segments, info = model.transcribe(
+    stem = audio_file.parent.name
+    match = CAPTURE_STEM_RE.match(stem)
+    if not match:
+        return None
+
+    try:
+        return datetime.strptime(match.group(1), "%Y-%m-%d_%H-%M-%S")
+    except ValueError:
+        return None
+
+
+def parse_segment_start_ms(audio_file: Path) -> int:
+    """
+    Parse VAD segment start offset from file name.
+    """
+    match = SEGMENT_OFFSET_RE.search(audio_file.name)
+    if not match:
+        return 0
+    return int(match.group(1))
+
+
+def transcribe_file(model: WhisperModel, audio_file: Path, language: str = "fr") -> List[str]:
+    """
+    Transcribe a single audio file using faster-whisper and return timestamped lines.
+    """
+    segments, _ = model.transcribe(
         str(audio_file),
         language=language,
         vad_filter=False,
@@ -34,13 +58,27 @@ def transcribe_file(model: WhisperModel, audio_file: Path, language: str = "fr")
         temperature=0.0,
     )
 
-    texts: List[str] = []
+    capture_start = parse_capture_start(audio_file)
+    segment_start_ms = parse_segment_start_ms(audio_file)
+
+    lines: List[str] = []
     for segment in segments:
         text = segment.text.strip()
-        if text:
-            texts.append(text)
+        if not text:
+            continue
 
-    return " ".join(texts).strip()
+        if capture_start is not None:
+            absolute_dt = capture_start + timedelta(
+                milliseconds=segment_start_ms + int(segment.start * 1000)
+            )
+            timestamp = absolute_dt.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            # fallback: timestamp relative to current chunk
+            timestamp = f"+{segment.start:.2f}s"
+
+        lines.append(f"[{timestamp}] {text}")
+
+    return lines
 
 
 def main() -> None:
@@ -54,7 +92,7 @@ def main() -> None:
 
     print("Loading faster-whisper model...")
     model = WhisperModel(
-        model_size_or_path="medium",
+        model_size_or_path="large-v3",
         device="cpu",
         compute_type="int8",
     )
@@ -68,19 +106,19 @@ def main() -> None:
 
     for audio_file in audio_files:
         print(f"\n=== {audio_file.name} ===")
-        text = transcribe_file(model, audio_file, language="fr")
+        lines = transcribe_file(model, audio_file, language="fr")
 
-        if text:
-            print(text)
-            full_transcription.append(text)
+        if lines:
+            for line in lines:
+                print(line)
+            full_transcription.extend(lines)
         else:
             print("[empty transcription]")
 
-    merged_text = " ".join(full_transcription).strip()
-
     print("\n=== MERGED TRANSCRIPTION ===")
-    if merged_text:
-        print(merged_text)
+    if full_transcription:
+        for line in full_transcription:
+            print(line)
     else:
         print("[empty transcription]")
 

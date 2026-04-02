@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import List, Tuple
+import shutil
 import wave
 
 import numpy as np
@@ -83,6 +84,9 @@ def save_speech_segments(
 ) -> List[Path]:
     """
     Save detected speech segments as individual WAV files.
+
+    File names embed VAD offsets in milliseconds:
+    speech_segment_001_start000123ms_end001456ms.wav
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     saved_files: List[Path] = []
@@ -92,12 +96,32 @@ def save_speech_segments(
         end = segment["end"]
 
         chunk = audio[start:end]
-        output_path = output_dir / f"speech_segment_{index:03d}.wav"
+        start_ms = int((start / sample_rate) * 1000)
+        end_ms = int((end / sample_rate) * 1000)
+        output_path = (
+            output_dir
+            / f"speech_segment_{index:03d}_start{start_ms:010d}ms_end{end_ms:010d}ms.wav"
+        )
 
         save_chunk_wav(output_path, chunk, sample_rate)
         saved_files.append(output_path)
 
     return saved_files
+
+
+def archive_processed_file(input_path: Path, processed_dir: Path) -> Path:
+    """
+    Move a processed input WAV file into audios_processed/.
+    """
+    processed_dir.mkdir(parents=True, exist_ok=True)
+
+    destination = processed_dir / input_path.name
+    counter = 1
+    while destination.exists():
+        destination = processed_dir / f"{input_path.stem}_{counter:03d}{input_path.suffix}"
+        counter += 1
+
+    return Path(shutil.move(str(input_path), str(destination)))
 
 
 def process_file(
@@ -117,10 +141,10 @@ def process_file(
         audio,
         model,
         sampling_rate=sample_rate,
-        threshold=0.5,
-        min_speech_duration_ms=300,
-        min_silence_duration_ms=700,
-        speech_pad_ms=300,
+        threshold=0.65,
+        min_speech_duration_ms=800,
+        min_silence_duration_ms=1000,
+        speech_pad_ms=200,
         return_seconds=False,
     )
 
@@ -148,6 +172,7 @@ def process_file(
 def main() -> None:
     input_dir = Path("audios")
     output_dir = Path("speech_segments")
+    processed_input_dir = Path("audios_processed")
     sample_rate: SampleRate = 16000
 
     wav_files = sorted(input_dir.glob("*.wav"))
@@ -168,6 +193,8 @@ def main() -> None:
                 model=model,
                 sample_rate=sample_rate,
             )
+            archived_path = archive_processed_file(wav_file, processed_input_dir)
+            print(f"Archived processed file to: {archived_path}")
         except Exception as exc:
             print(f"Error while processing {wav_file.name}: {exc}")
 
