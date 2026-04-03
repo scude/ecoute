@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
+import math
 from pathlib import Path
 import re
-from typing import Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from faster_whisper import WhisperModel
 
@@ -45,9 +47,20 @@ def parse_segment_start_ms(audio_file: Path) -> int:
     return int(match.group(1))
 
 
-def transcribe_file(model: WhisperModel, audio_file: Path, language: str = "fr") -> List[str]:
+def normalize_confidence(avg_logprob: float) -> float:
     """
-    Transcribe a single audio file using faster-whisper and return timestamped lines.
+    Convert average log-probability to a readable confidence score in [0.0, 1.0].
+    """
+    return max(0.0, min(1.0, math.exp(avg_logprob)))
+
+
+def transcribe_file(
+    model: WhisperModel,
+    audio_file: Path,
+    language: str = "fr",
+) -> List[Dict[str, Any]]:
+    """
+    Transcribe a single audio file using faster-whisper and return structured entries.
     """
     segments, _ = model.transcribe(
         str(audio_file),
@@ -67,24 +80,35 @@ def transcribe_file(model: WhisperModel, audio_file: Path, language: str = "fr")
     capture_start = parse_capture_start(audio_file)
     segment_start_ms = parse_segment_start_ms(audio_file)
 
-    lines: List[str] = []
+    entries: List[Dict[str, Any]] = []
     for segment in segments:
         text = segment.text.strip()
         if not text:
             continue
 
+        segment_start_sec = (segment_start_ms / 1000.0) + float(segment.start)
+        segment_end_sec = (segment_start_ms / 1000.0) + float(segment.end)
+
         if capture_start is not None:
             absolute_dt = capture_start + timedelta(
                 milliseconds=segment_start_ms + int(segment.start * 1000)
             )
-            timestamp = absolute_dt.strftime("%Y-%m-%d %H:%M:%S")
+            timestamp_abs = absolute_dt.isoformat(timespec="milliseconds")
         else:
-            # fallback: timestamp relative to current chunk
-            timestamp = f"+{segment.start:.2f}s"
+            timestamp_abs = None
 
-        lines.append(f"[{timestamp}] {text}")
+        entries.append(
+            {
+                "timestamp_abs": timestamp_abs,
+                "text": text,
+                "confidence": round(normalize_confidence(segment.avg_logprob), 4),
+                "audio_path": str(audio_file),
+                "segment_start_sec": round(segment_start_sec, 3),
+                "segment_end_sec": round(segment_end_sec, 3),
+            }
+        )
 
-    return lines
+    return entries
 
 
 def main() -> None:
@@ -108,23 +132,45 @@ def main() -> None:
         print("No WAV files found.")
         return
 
-    full_transcription: List[str] = []
+    full_transcription: List[Dict[str, Any]] = []
 
     for audio_file in audio_files:
         print(f"\n=== {audio_file.name} ===")
-        lines = transcribe_file(model, audio_file, language="fr")
+        entries = transcribe_file(model, audio_file, language="fr")
 
-        if lines:
-            for line in lines:
-                print(line)
-            full_transcription.extend(lines)
+        if entries:
+            for entry in entries:
+                display_ts = entry["timestamp_abs"] or f"+{entry['segment_start_sec']:.2f}s"
+                print(
+                    f"[{display_ts}] ({entry['confidence']:.2f}) {entry['text']}"
+                )
+            full_transcription.extend(entries)
         else:
             print("[empty transcription]")
 
+    full_transcription.sort(
+        key=lambda item: (
+            item["timestamp_abs"] is None,
+            item["timestamp_abs"] or "",
+            item["audio_path"],
+            item["segment_start_sec"],
+        )
+    )
+
+    output_dir = Path("transcriptions")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file = output_dir / "transcriptions.json"
+    output_file.write_text(
+        json.dumps(full_transcription, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
     print("\n=== MERGED TRANSCRIPTION ===")
     if full_transcription:
-        for line in full_transcription:
-            print(line)
+        for entry in full_transcription:
+            display_ts = entry["timestamp_abs"] or f"+{entry['segment_start_sec']:.2f}s"
+            print(f"[{display_ts}] ({entry['confidence']:.2f}) {entry['text']}")
+        print(f"\nSaved JSON output to: {output_file}")
     else:
         print("[empty transcription]")
 

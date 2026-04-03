@@ -1,0 +1,66 @@
+[
+  {
+    "timestamp_abs": "2026-04-02T15:35:38.000",
+    "text": "Et on va tester.",
+    "confidence": 0.3963,
+    "audio_path": "speech_segments/rtsp_audio_2026-04-02_15-35-38/speech_segment_001_start0000056970ms_end0000058518ms.wav",
+    "segment_start_sec": 0.0,
+    "segment_end_sec": 2.0
+  },
+  {
+    "timestamp_abs": "2026-04-02T15:36:37.000",
+    "text": "Oui oui, on va voir comment ça marche.",
+    "confidence": 0.4932,
+    "audio_path": "speech_segments/rtsp_audio_2026-04-02_15-36-37/speech_segment_001_start0000000170ms_end0000003702ms.wav",
+    "segment_start_sec": 0.0,
+    "segment_end_sec": 3.36
+  },
+  {
+    "timestamp_abs": "2026-04-02T18:17:51.000",
+    "text": "Il veut le déniveler ?",
+    "confidence": 0.4225,
+    "audio_path": "speech_segments/rtsp_audio_2026-04-02_18-17-51/speech_segment_001_start0000038410ms_end0000045526ms.wav",
+    "segment_start_sec": 0.0,
+    "segment_end_sec": 2.0
+  },
+  {
+    "timestamp_abs": "2026-04-02T18:17:53.000",
+    "text": "Il veut le droit, mais ça a tendu à s'arrêter, il veut que...",
+    "confidence": 0.4225,
+    "audio_path": "speech_segments/rtsp_audio_2026-04-02_18-17-51/speech_segment_001_start0000038410ms_end0000045526ms.wav",
+    "segment_start_sec": 2.0,
+    "segment_end_sec": 5.0
+  },
+  {
+    "timestamp_abs": "2026-04-02T18:17:56.000",
+    "text": "Ok.",
+    "confidence": 0.4225,
+    "audio_path": "speech_segments/rtsp_audio_2026-04-02_18-17-51/speech_segment_001_start0000038410ms_end0000045526ms.wav",
+    "segment_start_sec": 5.0,
+    "segment_end_sec": 6.0
+  },
+  {
+    "timestamp_abs": "2026-04-02T18:17:57.000",
+    "text": "Ok.",
+    "confidence": 0.4225,
+    "audio_path": "speech_segments/rtsp_audio_2026-04-02_18-17-51/speech_segment_001_start0000038410ms_end0000045526ms.wav",
+    "segment_start_sec": 6.0,
+    "segment_end_sec": 7.0
+  },
+  {
+    "timestamp_abs": null,
+    "text": "je teste, je teste la solution, est-ce qu'elle fonctionne ?",
+    "confidence": 0.6244,
+    "audio_path": "speech_segments/output/speech_segment_001_start0000029610ms_end0000034838ms.wav",
+    "segment_start_sec": 0.0,
+    "segment_end_sec": 3.84
+  },
+  {
+    "timestamp_abs": null,
+    "text": "on va voir",
+    "confidence": 0.6244,
+    "audio_path": "speech_segments/output/speech_segment_001_start0000029610ms_end0000034838ms.wav",
+    "segment_start_sec": 3.84,
+    "segment_end_sec": 4.84
+  }
+]
