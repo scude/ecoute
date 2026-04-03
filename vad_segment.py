@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-import shutil
 import wave
 
 import numpy as np
@@ -112,19 +111,18 @@ def save_speech_segments(
     return saved_files
 
 
-def archive_processed_file(input_path: Path, processed_dir: Path) -> Path:
+def cleanup_processed_file(input_path: Path, processed_dir: Path) -> None:
     """
-    Move a processed input WAV file into audios_processed/.
+    Delete a source WAV file once VAD segments are written.
+
+    Also removes a stale copy in audios_processed/ when present.
     """
-    processed_dir.mkdir(parents=True, exist_ok=True)
+    if input_path.exists():
+        input_path.unlink()
 
-    destination = processed_dir / input_path.name
-    counter = 1
-    while destination.exists():
-        destination = processed_dir / f"{input_path.stem}_{counter:03d}{input_path.suffix}"
-        counter += 1
-
-    return Path(shutil.move(str(input_path), str(destination)))
+    stale_archived_path = processed_dir / input_path.name
+    if stale_archived_path.exists():
+        stale_archived_path.unlink()
 
 
 def process_file(
@@ -227,8 +225,8 @@ def process_pending_wavs(config: Dict[str, Any]) -> Dict[str, int]:
                 sample_rate=sample_rate,
                 vad_config=vad_cfg,
             )
-            archived_path = archive_processed_file(wav_file, processed_input_dir)
-            print(f"Archived processed file to: {archived_path}")
+            cleanup_processed_file(wav_file, processed_input_dir)
+            print(f"Deleted processed source file: {wav_file}")
             processed_files += 1
             generated_segments += generated
         except Exception as exc:

@@ -11,7 +11,7 @@ Le pipeline suit cet ordre :
 1. **Capture RTSP** (`capture_rtsp_audio.sh`)  
    Génère des fichiers WAV dans `audios/`.
 2. **VAD** (`vad_segment.py`)  
-   Détecte les portions parlées, exporte les segments dans `speech_segments/`, archive les WAV source traités dans `audios_processed/`.
+   Détecte les portions parlées, exporte les segments dans `speech_segments/`, puis supprime les WAV source traités (et nettoie une éventuelle copie homonyme dans `audios_processed/`).
 3. **Transcription incrémentale** (`transcribe_segments.py`)  
    Lit les segments non traités, écrit les résultats dans SQLite, export JSON optionnel.
 4. **UI Streamlit** (`app.py`)  
@@ -172,7 +172,7 @@ Sections principales :
 - `SPEECH_SEGMENTS_DIR`  
   Dossier des segments VAD (ex: `speech_segments`).
 - `PROCESSED_AUDIO_DIR`  
-  Dossier d’archivage des WAV source traités (ex: `audios_processed`).
+  Dossier optionnel de nettoyage d’anciens WAV source traités (ex: `audios_processed`).
 - `TRANSCRIPTIONS_DB_PATH`  
   Chemin SQLite des transcriptions.
 - `TRANSCRIPTIONS_JSON_OUTPUT`  
