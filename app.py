@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from monitoring import get_monitoring_snapshot
 from storage import DEFAULT_DB_PATH, SQLiteStorage
 
 TRANSCRIPTIONS_PATH = Path("transcriptions/transcriptions.json")
@@ -108,21 +109,96 @@ def format_timestamp_fr(ts_raw: Any) -> str:
     return ts.strftime("%d/%m/%Y %H:%M:%S")
 
 
-def main() -> None:
-    st.set_page_config(page_title="Visualiseur de transcriptions", layout="wide")
-    st.title("Visualiseur local des transcriptions")
+def _format_capture_status(capture: dict[str, Any]) -> str:
+    return "🟢 capture active" if capture.get("recent") else "🔴 capture stale"
 
-    text_query = st.sidebar.text_input("Filtre texte", value="").strip().lower()
-    conf_threshold = st.sidebar.slider(
-        "Seuil de confiance minimum",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.0,
-        step=0.01,
+
+def _format_pipeline_status(pipeline: dict[str, Any]) -> str:
+    state = pipeline.get("last_run_success")
+    if state is True:
+        return "🟢 pipeline OK"
+    if state is False:
+        return "🔴 pipeline en échec"
+    return "⚪ pipeline inconnu"
+
+
+def render_monitoring_digest(snapshot: dict[str, Any]) -> None:
+    capture = snapshot["capture"]
+    pipeline = snapshot["pipeline"]
+    pending = snapshot["pending"]
+    storage = snapshot["storage"]
+
+    st.caption("État rapide")
+    st.markdown(
+        "\n".join(
+            [
+                f"- {_format_capture_status(capture)}",
+                f"- {_format_pipeline_status(pipeline)}",
+                f"- âge dernier run: `{pipeline['age_human']}`",
+                f"- backlog: `{pending['total']}` fichiers (audios={pending['audios']}, segments={pending['speech_segments']})",
+                f"- stockage: `{storage['used_percent']:.1f}%` utilisé ({storage['usage_label']})",
+            ]
+        )
     )
-    page_size = st.sidebar.selectbox("Taille de page", options=[50, 100, 200, 500], index=1)
-    page_number = st.sidebar.number_input("Page", min_value=1, value=1, step=1)
 
+
+def render_monitoring_details(snapshot: dict[str, Any]) -> None:
+    capture = snapshot["capture"]
+    pipeline = snapshot["pipeline"]
+    pending = snapshot["pending"]
+    storage = snapshot["storage"]
+
+    st.subheader("Santé des services")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Capture", _format_capture_status(capture))
+    c2.metric("Pipeline", _format_pipeline_status(pipeline))
+    c3.metric("Âge dernier run", pipeline["age_human"])
+    c4.metric("Backlog total", str(pending["total"]))
+
+    st.caption(
+        f"Heartbeat stale au-delà de {capture['max_age_seconds']}s • audios={pending['audios']} • speech_segments={pending['speech_segments']}"
+    )
+
+    if pipeline.get("last_error"):
+        st.error(f"Dernière erreur pipeline: {pipeline['last_error']}")
+
+    st.subheader("Stockage")
+    s1, s2, s3, s4 = st.columns(4)
+    s1.metric("Total", storage["total_human"])
+    s2.metric("Utilisé", storage["used_human"])
+    s3.metric("Libre", storage["free_human"])
+    s4.metric("Taux", f"{storage['used_percent']:.1f}%")
+
+    if storage["usage_level"] == "critical":
+        st.error(
+            f"Seuil critique dépassé ({storage['critical_threshold_percent']}%). Action recommandée immédiatement."
+        )
+    elif storage["usage_level"] == "warning":
+        st.warning(
+            f"Seuil d'alerte dépassé ({storage['warn_threshold_percent']}%). Prévoir du nettoyage."
+        )
+    else:
+        st.success("Capacité disque dans la zone nominale.")
+
+    folder_df = pd.DataFrame(
+        [
+            {
+                "Dossier": name,
+                "Chemin": data["path"],
+                "Taille": data["human"],
+            }
+            for name, data in storage["folder_sizes"].items()
+        ]
+    )
+    st.dataframe(folder_df, use_container_width=True, hide_index=True)
+
+
+def load_transcriptions_for_page(
+    text_query: str,
+    conf_threshold: float,
+    page_size: int,
+    page_number: int,
+) -> tuple[pd.DataFrame, int, str]:
     db_exists = DEFAULT_DB_PATH.exists()
 
     if db_exists:
@@ -134,36 +210,54 @@ def main() -> None:
                 int(page_size),
                 int(page_number),
             )
-            source_label = f"SQLite ({DEFAULT_DB_PATH})"
+            return df, total_count, f"SQLite ({DEFAULT_DB_PATH})"
         except Exception as exc:
             st.warning(
                 f"Lecture SQLite impossible ({exc}). Fallback JSON activé.",
                 icon="⚠️",
             )
-            db_exists = False
 
-    if not db_exists:
-        try:
-            df = load_transcriptions_json(TRANSCRIPTIONS_PATH)
-            filtered = df[df["confidence"].fillna(0.0) >= conf_threshold]
-            if text_query:
-                filtered = filtered[
-                    filtered["text"].fillna("").str.lower().str.contains(text_query, regex=False)
-                ]
-            filtered = filtered.sort_values(by=["timestamp_dt", "timestamp_abs"], na_position="last")
-            total_count = len(filtered)
-            start = (int(page_number) - 1) * int(page_size)
-            end = start + int(page_size)
-            df = filtered.iloc[start:end]
-            source_label = f"JSON ({TRANSCRIPTIONS_PATH})"
-        except FileNotFoundError:
-            st.error(
-                "Aucune base SQLite ni JSON trouvé. Exécutez d'abord l'étape de transcription."
-            )
-            return
-        except json.JSONDecodeError:
-            st.error("Le JSON de transcription est invalide. Vérifiez le format du fichier.")
-            return
+    try:
+        df = load_transcriptions_json(TRANSCRIPTIONS_PATH)
+        filtered = df[df["confidence"].fillna(0.0) >= conf_threshold]
+        if text_query:
+            filtered = filtered[
+                filtered["text"].fillna("").str.lower().str.contains(text_query, regex=False)
+            ]
+        filtered = filtered.sort_values(by=["timestamp_dt", "timestamp_abs"], na_position="last")
+        total_count = len(filtered)
+        start = (int(page_number) - 1) * int(page_size)
+        end = start + int(page_size)
+        return filtered.iloc[start:end], total_count, f"JSON ({TRANSCRIPTIONS_PATH})"
+    except FileNotFoundError:
+        st.error("Aucune base SQLite ni JSON trouvé. Exécutez d'abord l'étape de transcription.")
+        return pd.DataFrame(), 0, ""
+    except json.JSONDecodeError:
+        st.error("Le JSON de transcription est invalide. Vérifiez le format du fichier.")
+        return pd.DataFrame(), 0, ""
+
+
+def render_transcriptions_tab() -> None:
+    text_query = st.sidebar.text_input("Filtre texte", value="").strip().lower()
+    conf_threshold = st.sidebar.slider(
+        "Seuil de confiance minimum",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.0,
+        step=0.01,
+    )
+    page_size = st.sidebar.selectbox("Taille de page", options=[50, 100, 200, 500], index=1)
+    page_number = st.sidebar.number_input("Page", min_value=1, value=1, step=1)
+
+    df, total_count, source_label = load_transcriptions_for_page(
+        text_query,
+        conf_threshold,
+        int(page_size),
+        int(page_number),
+    )
+
+    if not source_label:
+        return
 
     if df.empty and total_count == 0:
         st.warning("Aucune transcription disponible pour les filtres courants.")
@@ -214,6 +308,22 @@ def main() -> None:
                 st.audio(str(audio_path), format="audio/wav")
 
         st.divider()
+
+
+def main() -> None:
+    st.set_page_config(page_title="Visualiseur de transcriptions", layout="wide")
+    st.title("Visualiseur local des transcriptions")
+
+    snapshot = get_monitoring_snapshot()
+    render_monitoring_digest(snapshot)
+
+    tab_transcriptions, tab_monitoring = st.tabs(["Transcriptions", "Monitoring détaillé"])
+
+    with tab_transcriptions:
+        render_transcriptions_tab()
+
+    with tab_monitoring:
+        render_monitoring_details(snapshot)
 
 
 if __name__ == "__main__":
