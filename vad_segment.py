@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 import shutil
 import wave
 
 import numpy as np
 import torch
 from silero_vad import get_speech_timestamps, load_silero_vad
+
+from pipeline_config import DEFAULT_CONFIG_PATH, load_config
 
 
 SampleRate = int
@@ -129,7 +132,8 @@ def process_file(
     base_output_dir: Path,
     model: torch.nn.Module,
     sample_rate: SampleRate,
-) -> None:
+    vad_config: Dict[str, Any],
+) -> int:
     """
     Process a single WAV file and save its speech segments into a dedicated subdirectory.
     """
@@ -141,16 +145,16 @@ def process_file(
         audio,
         model,
         sampling_rate=sample_rate,
-        threshold=0.5,
-        min_speech_duration_ms=1200,
-        min_silence_duration_ms=1200,
-        speech_pad_ms=150,
+        threshold=float(vad_config["threshold"]),
+        min_speech_duration_ms=int(vad_config["min_speech_duration_ms"]),
+        min_silence_duration_ms=int(vad_config["min_silence_duration_ms"]),
+        speech_pad_ms=int(vad_config["speech_pad_ms"]),
         return_seconds=False,
     )
 
     if not speech_timestamps:
         print("No speech detected.")
-        return
+        return 0
 
     ranges = speech_timestamps_to_seconds(speech_timestamps, sample_rate)
 
@@ -168,17 +172,26 @@ def process_file(
     for file_path in saved_files:
         print(f"  - {file_path.name}")
 
+    return len(saved_files)
 
-def main() -> None:
-    input_dir = Path("audios")
-    output_dir = Path("speech_segments")
-    processed_input_dir = Path("audios_processed")
-    sample_rate: SampleRate = 16000
+
+def process_pending_wavs(config: Dict[str, Any]) -> Dict[str, int]:
+    paths_cfg = config["paths"]
+    vad_cfg = config["vad"]
+    input_dir = Path(paths_cfg["input_audio_dir"])
+    output_dir = Path(paths_cfg["speech_segments_dir"])
+    processed_input_dir = Path(paths_cfg["processed_audio_dir"])
+    sample_rate: SampleRate = int(vad_cfg["sample_rate"])
 
     wav_files = sorted(input_dir.glob("*.wav"))
 
     if not wav_files:
-        raise FileNotFoundError(f"No WAV files found in: {input_dir.resolve()}")
+        return {
+            "found_files": 0,
+            "candidate_files": 0,
+            "processed_files": 0,
+            "generated_segments": 0,
+        }
 
     # The RTSP capture script always has one segment file currently being written.
     # Skip the most recently modified WAV file to avoid reading a partial file.
@@ -190,27 +203,54 @@ def main() -> None:
             "Only one WAV file found and it appears to be the file currently being written. "
             "Nothing to process yet."
         )
-        return
+        return {
+            "found_files": 1,
+            "candidate_files": 0,
+            "processed_files": 0,
+            "generated_segments": 0,
+        }
 
     print("Loading model...")
     model = load_silero_vad()
 
     print(f"Found {len(wav_files)} WAV file(s) to process.")
 
+    processed_files = 0
+    generated_segments = 0
+
     for wav_file in wav_files:
         try:
-            process_file(
+            generated = process_file(
                 input_path=wav_file,
                 base_output_dir=output_dir,
                 model=model,
                 sample_rate=sample_rate,
+                vad_config=vad_cfg,
             )
             archived_path = archive_processed_file(wav_file, processed_input_dir)
             print(f"Archived processed file to: {archived_path}")
+            processed_files += 1
+            generated_segments += generated
         except Exception as exc:
             print(f"Error while processing {wav_file.name}: {exc}")
 
     print("\nAll files processed.")
+    return {
+        "found_files": len(wav_files) + 1,
+        "candidate_files": len(wav_files),
+        "processed_files": processed_files,
+        "generated_segments": generated_segments,
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
+    args = parser.parse_args()
+
+    config = load_config(args.config)
+    stats = process_pending_wavs(config)
+    print(f"VAD summary: {stats}")
 
 
 if __name__ == "__main__":
