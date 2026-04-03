@@ -7,11 +7,13 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from storage import DEFAULT_DB_PATH, SQLiteStorage
+
 TRANSCRIPTIONS_PATH = Path("transcriptions/transcriptions.json")
 
 
 @st.cache_data
-def load_transcriptions(path: Path) -> pd.DataFrame:
+def load_transcriptions_json(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Fichier introuvable: {path}")
 
@@ -26,6 +28,34 @@ def load_transcriptions(path: Path) -> pd.DataFrame:
     df["timestamp_dt"] = pd.to_datetime(df["timestamp_abs"], errors="coerce")
     df["confidence"] = pd.to_numeric(df["confidence"], errors="coerce")
     return df
+
+
+@st.cache_data
+def load_transcriptions_sqlite(
+    db_path: str,
+    text_query: str,
+    min_confidence: float,
+    page_size: int,
+    page_number: int,
+) -> tuple[pd.DataFrame, int]:
+    storage = SQLiteStorage(Path(db_path))
+    offset = page_size * max(page_number - 1, 0)
+    rows = storage.query_transcriptions(
+        text_query=text_query,
+        min_confidence=min_confidence,
+        limit=page_size,
+        offset=offset,
+    )
+    total = storage.count_transcriptions(text_query=text_query, min_confidence=min_confidence)
+
+    df = pd.DataFrame(rows)
+    for col in ["timestamp_abs", "confidence", "text", "audio_path"]:
+        if col not in df.columns:
+            df[col] = None
+
+    df["timestamp_dt"] = pd.to_datetime(df["timestamp_abs"], errors="coerce")
+    df["confidence"] = pd.to_numeric(df["confidence"], errors="coerce")
+    return df, total
 
 
 def confidence_badge(conf: float | None) -> str:
@@ -49,47 +79,66 @@ def main() -> None:
     st.set_page_config(page_title="Visualiseur de transcriptions", layout="wide")
     st.title("Visualiseur local des transcriptions")
 
-    try:
-        df = load_transcriptions(TRANSCRIPTIONS_PATH)
-    except FileNotFoundError:
-        st.error(
-            "Le fichier `transcriptions/transcriptions.json` est introuvable. "
-            "Exécutez d'abord l'étape de transcription."
-        )
-        return
-    except json.JSONDecodeError:
-        st.error("Le JSON de transcription est invalide. Vérifiez le format du fichier.")
-        return
-
-    if df.empty:
-        st.warning("Le fichier de transcription est vide.")
-        return
-
-    st.sidebar.header("Filtres")
     text_query = st.sidebar.text_input("Filtre texte", value="").strip().lower()
-
-    max_conf = float(df["confidence"].dropna().max()) if df["confidence"].notna().any() else 1.0
-    min_conf = float(df["confidence"].dropna().min()) if df["confidence"].notna().any() else 0.0
-
     conf_threshold = st.sidebar.slider(
         "Seuil de confiance minimum",
         min_value=0.0,
-        max_value=max(1.0, max_conf),
-        value=max(0.0, min_conf),
+        max_value=1.0,
+        value=0.0,
         step=0.01,
     )
+    page_size = st.sidebar.selectbox("Taille de page", options=[50, 100, 200, 500], index=1)
+    page_number = st.sidebar.number_input("Page", min_value=1, value=1, step=1)
 
-    filtered = df.copy()
-    filtered = filtered[filtered["confidence"].fillna(0.0) >= conf_threshold]
+    db_exists = DEFAULT_DB_PATH.exists()
 
-    if text_query:
-        filtered = filtered[
-            filtered["text"].fillna("").str.lower().str.contains(text_query, regex=False)
-        ]
+    if db_exists:
+        try:
+            df, total_count = load_transcriptions_sqlite(
+                str(DEFAULT_DB_PATH),
+                text_query,
+                conf_threshold,
+                int(page_size),
+                int(page_number),
+            )
+            source_label = f"SQLite ({DEFAULT_DB_PATH})"
+        except Exception as exc:
+            st.warning(
+                f"Lecture SQLite impossible ({exc}). Fallback JSON activé.",
+                icon="⚠️",
+            )
+            db_exists = False
 
-    filtered = filtered.sort_values(by=["timestamp_dt", "timestamp_abs"], na_position="last")
+    if not db_exists:
+        try:
+            df = load_transcriptions_json(TRANSCRIPTIONS_PATH)
+            filtered = df[df["confidence"].fillna(0.0) >= conf_threshold]
+            if text_query:
+                filtered = filtered[
+                    filtered["text"].fillna("").str.lower().str.contains(text_query, regex=False)
+                ]
+            filtered = filtered.sort_values(by=["timestamp_dt", "timestamp_abs"], na_position="last")
+            total_count = len(filtered)
+            start = (int(page_number) - 1) * int(page_size)
+            end = start + int(page_size)
+            df = filtered.iloc[start:end]
+            source_label = f"JSON ({TRANSCRIPTIONS_PATH})"
+        except FileNotFoundError:
+            st.error(
+                "Aucune base SQLite ni JSON trouvé. Exécutez d'abord l'étape de transcription."
+            )
+            return
+        except json.JSONDecodeError:
+            st.error("Le JSON de transcription est invalide. Vérifiez le format du fichier.")
+            return
 
-    table_df = filtered[["timestamp_abs", "confidence", "text", "audio_path"]].copy()
+    if df.empty and total_count == 0:
+        st.warning("Aucune transcription disponible pour les filtres courants.")
+        return
+
+    st.caption(f"Source: {source_label} • Total lignes filtrées: {total_count}")
+
+    table_df = df[["timestamp_abs", "confidence", "text", "audio_path"]].copy()
     table_df["timestamp_abs"] = table_df["timestamp_abs"].apply(format_timestamp_fr)
     table_df["confidence"] = table_df["confidence"].round(4)
 
@@ -99,11 +148,12 @@ def main() -> None:
     st.subheader("Écoute par ligne")
     st.caption("Cliquez sur Écouter pour lire le WAV associé.")
 
-    if filtered.empty:
-        st.info("Aucune ligne ne correspond aux filtres courants.")
+    if df.empty:
+        st.info("Aucune ligne sur cette page.")
         return
 
-    for idx, row in filtered.reset_index(drop=True).iterrows():
+    for idx, row in df.reset_index(drop=True).iterrows():
+        row_number = (int(page_number) - 1) * int(page_size) + idx + 1
         ts = format_timestamp_fr(row.get("timestamp_abs"))
         text = row.get("text") or ""
         conf = row.get("confidence")
@@ -113,17 +163,17 @@ def main() -> None:
         left, right = st.columns([6, 1])
         with left:
             st.markdown(
-                f"**{idx + 1}.** `{ts}` • {confidence_badge(conf)}  \\\n{text}  \\\n`{audio_path_str}`"
+                f"**{row_number}.** `{ts}` • {confidence_badge(conf)}  \\\n{text}  \\\n`{audio_path_str}`"
             )
         with right:
-            play = st.button("Écouter", key=f"play_{idx}")
+            play = st.button("Écouter", key=f"play_{row_number}")
 
         if play:
             if not audio_path_str:
-                st.warning(f"Ligne {idx + 1}: chemin audio vide.")
+                st.warning(f"Ligne {row_number}: chemin audio vide.")
             elif not audio_path.exists():
                 st.error(
-                    f"Ligne {idx + 1}: fichier audio introuvable: `{audio_path_str}`. "
+                    f"Ligne {row_number}: fichier audio introuvable: `{audio_path_str}`. "
                     "Vérifiez que les segments WAV existent bien sur disque."
                 )
             else:

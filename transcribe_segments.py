@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import json
+import argparse
+import hashlib
 from datetime import datetime, timedelta
 import math
 from pathlib import Path
@@ -8,6 +9,8 @@ import re
 from typing import Any, Dict, Iterable, List, Optional
 
 from faster_whisper import WhisperModel
+
+from storage import DEFAULT_DB_PATH, SQLiteStorage
 
 
 CAPTURE_STEM_RE = re.compile(r".*?(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})")
@@ -57,6 +60,12 @@ def parse_segment_end_ms(audio_file: Path) -> int:
     return int(match.group(2))
 
 
+def compute_segment_id(audio_file: Path, vad_start_ms: int, vad_end_ms: int) -> str:
+    stat = audio_file.stat()
+    payload = f"{audio_file.resolve()}|{vad_start_ms}|{vad_end_ms}|{stat.st_mtime}|{stat.st_size}"
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
 def normalize_confidence(avg_logprob: float) -> float:
     """
     Convert average log-probability to a readable confidence score in [0.0, 1.0].
@@ -67,6 +76,7 @@ def normalize_confidence(avg_logprob: float) -> float:
 def transcribe_file(
     model: WhisperModel,
     audio_file: Path,
+    segment_id: str,
     language: str = "fr",
 ) -> List[Dict[str, Any]]:
     """
@@ -84,7 +94,6 @@ def transcribe_file(
         compression_ratio_threshold=1.8,
         log_prob_threshold=-0.9,
         no_speech_threshold=0.3,
-
     )
 
     capture_start = parse_capture_start(audio_file)
@@ -111,6 +120,7 @@ def transcribe_file(
 
         entries.append(
             {
+                "segment_id": segment_id,
                 "timestamp_abs": timestamp_abs,
                 "text": text,
                 "confidence": round(normalize_confidence(segment.avg_logprob), 4),
@@ -127,12 +137,25 @@ def transcribe_file(
 
 def main() -> None:
     """
-    Transcribe every WAV file found in speech_segments/.
+    Transcribe every WAV file found in speech_segments.
     """
-    input_dir = Path("speech_segments")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input-dir", type=Path, default=Path("speech_segments"))
+    parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
+    parser.add_argument("--export-json", action="store_true")
+    parser.add_argument(
+        "--json-output",
+        type=Path,
+        default=Path("transcriptions/transcriptions.json"),
+        help="JSON compatibility export path",
+    )
+    args = parser.parse_args()
 
+    input_dir = args.input_dir
     if not input_dir.exists():
         raise FileNotFoundError(f"Directory not found: {input_dir}")
+
+    storage = SQLiteStorage(args.db_path)
 
     print("Loading faster-whisper model...")
     model = WhisperModel(
@@ -146,47 +169,45 @@ def main() -> None:
         print("No WAV files found.")
         return
 
-    full_transcription: List[Dict[str, Any]] = []
-
+    new_rows_count = 0
     for audio_file in audio_files:
+        segment_start_ms = parse_segment_start_ms(audio_file)
+        segment_end_ms = parse_segment_end_ms(audio_file)
+        segment_id = compute_segment_id(audio_file, segment_start_ms, segment_end_ms)
+
+        if storage.is_segment_done(segment_id):
+            print(f"[skip] already processed: {audio_file.name}")
+            continue
+
         print(f"\n=== {audio_file.name} ===")
-        entries = transcribe_file(model, audio_file, language="fr")
+        entries = transcribe_file(model, audio_file, segment_id=segment_id, language="fr")
+        storage.append_transcription_rows(entries)
+
+        stat = audio_file.stat()
+        storage.mark_segment_done(
+            segment_id,
+            {
+                "audio_path": str(audio_file.resolve()),
+                "vad_start_ms": segment_start_ms,
+                "vad_end_ms": segment_end_ms,
+                "audio_mtime": stat.st_mtime,
+                "audio_size": stat.st_size,
+            },
+        )
 
         if entries:
             for entry in entries:
                 display_ts = entry["timestamp_abs"] or f"+{entry['segment_start_sec']:.2f}s"
-                print(
-                    f"[{display_ts}] ({entry['confidence']:.2f}) {entry['text']}"
-                )
-            full_transcription.extend(entries)
+                print(f"[{display_ts}] ({entry['confidence']:.2f}) {entry['text']}")
+            new_rows_count += len(entries)
         else:
             print("[empty transcription]")
 
-    full_transcription.sort(
-        key=lambda item: (
-            item["timestamp_abs"] is None,
-            item["timestamp_abs"] or "",
-            item["audio_path"],
-            item["segment_start_sec"],
-        )
-    )
+    if args.export_json:
+        storage.export_json(args.json_output)
+        print(f"\nJSON export generated: {args.json_output}")
 
-    output_dir = Path("transcriptions")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / "transcriptions.json"
-    output_file.write_text(
-        json.dumps(full_transcription, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-    print("\n=== MERGED TRANSCRIPTION ===")
-    if full_transcription:
-        for entry in full_transcription:
-            display_ts = entry["timestamp_abs"] or f"+{entry['segment_start_sec']:.2f}s"
-            print(f"[{display_ts}] ({entry['confidence']:.2f}) {entry['text']}")
-        print(f"\nSaved JSON output to: {output_file}")
-    else:
-        print("[empty transcription]")
+    print(f"\nDone. New rows inserted: {new_rows_count}")
 
 
 if __name__ == "__main__":
