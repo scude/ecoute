@@ -1,0 +1,71 @@
+services:
+  capture:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ecoute-capture
+    command: ["bash", "-c", "./capture_rtsp_audio.sh"]
+    env_file:
+      - .env
+    environment:
+      OUTPUT_DIR: /app/audios
+      PIPELINE_INTERVAL_SECONDS: ${PIPELINE_INTERVAL_SECONDS:-60}
+    volumes:
+      - ./audios:/app/audios
+      - ./audios_processed:/app/audios_processed
+      - ./speech_segments:/app/speech_segments
+      - ./transcriptions:/app/transcriptions
+    networks:
+      - ecoute-net
+    restart: unless-stopped
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ecoute-pipeline
+    command: ["python", "pipeline_runner.py", "--loop"]
+    env_file:
+      - .env
+    environment:
+      INPUT_AUDIO_DIR: /app/audios
+      PROCESSED_AUDIO_DIR: /app/audios_processed
+      SPEECH_SEGMENTS_DIR: /app/speech_segments
+      TRANSCRIPTIONS_DB_PATH: /app/transcriptions/transcriptions.sqlite
+      TRANSCRIPTIONS_JSON_OUTPUT: /app/transcriptions/transcriptions.json
+      PIPELINE_INTERVAL_SECONDS: ${PIPELINE_INTERVAL_SECONDS:-60}
+      PIPELINE_MAX_BACKOFF_SECONDS: ${PIPELINE_MAX_BACKOFF_SECONDS:-300}
+    volumes:
+      - ./audios:/app/audios
+      - ./audios_processed:/app/audios_processed
+      - ./speech_segments:/app/speech_segments
+      - ./transcriptions:/app/transcriptions
+    networks:
+      - ecoute-net
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ecoute-ui
+    command: ["streamlit", "run", "app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]
+    env_file:
+      - .env
+    environment:
+      TRANSCRIPTIONS_DB_PATH: /app/transcriptions/transcriptions.sqlite
+      TRANSCRIPTIONS_JSON_OUTPUT: /app/transcriptions/transcriptions.json
+    volumes:
+      - ./audios:/app/audios
+      - ./audios_processed:/app/audios_processed
+      - ./speech_segments:/app/speech_segments
+      - ./transcriptions:/app/transcriptions
+    ports:
+      - "8501:8501"
+    networks:
+      - ecoute-net
+    restart: unless-stopped
+
+networks:
+  ecoute-net:
+    driver: bridge

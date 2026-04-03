@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,38 @@ import streamlit as st
 from storage import DEFAULT_DB_PATH, SQLiteStorage
 
 TRANSCRIPTIONS_PATH = Path("transcriptions/transcriptions.json")
+
+
+def resolve_audio_path(audio_path_raw: str) -> Path:
+    """
+    Resolve audio paths written from different runtimes (host vs container).
+
+    Some transcription rows can contain absolute host paths
+    (e.g. /home/.../speech_segments/...). When the UI runs in Docker,
+    this path may not exist inside the container. In that case, remap it
+    to the local mounted speech segments directory if possible.
+    """
+    requested = Path(audio_path_raw)
+    if requested.exists():
+        return requested
+
+    speech_root = os.environ.get("SPEECH_SEGMENTS_DIR", "speech_segments")
+    candidate_roots = [
+        Path(speech_root),
+        Path("/app/speech_segments"),
+        Path("speech_segments"),
+    ]
+
+    parts = requested.parts
+    if "speech_segments" in parts:
+        idx = parts.index("speech_segments")
+        relative_tail = Path(*parts[idx + 1 :]) if idx + 1 < len(parts) else Path()
+        for root in candidate_roots:
+            candidate = root / relative_tail
+            if candidate.exists():
+                return candidate
+
+    return requested
 
 
 @st.cache_data
@@ -158,7 +191,7 @@ def main() -> None:
         text = row.get("text") or ""
         conf = row.get("confidence")
         audio_path_str = str(row.get("audio_path") or "")
-        audio_path = Path(audio_path_str)
+        audio_path = resolve_audio_path(audio_path_str) if audio_path_str else Path()
 
         left, right = st.columns([6, 1])
         with left:
@@ -174,6 +207,7 @@ def main() -> None:
             elif not audio_path.exists():
                 st.error(
                     f"Ligne {row_number}: fichier audio introuvable: `{audio_path_str}`. "
+                    f"Chemin résolu testé: `{audio_path}`. "
                     "Vérifiez que les segments WAV existent bien sur disque."
                 )
             else:

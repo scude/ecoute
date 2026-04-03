@@ -21,7 +21,67 @@ Le script **`pipeline_runner.py`** orchestre les étapes 2 et 3 en mode one-shot
 
 ---
 
-## 2) Installation
+## 2) Exécution recommandée: Docker Compose
+
+Le projet est maintenant prévu pour tourner via Docker Compose (capture + pipeline + UI),
+ce qui remplace l’installation manuelle de dépendances dans la majorité des cas.
+
+### 2.1 Prérequis
+
+- Docker Engine
+- Docker Compose (plugin `docker compose`)
+
+### 2.2 Configuration
+
+```bash
+cp .env.sample .env
+# éditer au minimum RTSP_URL dans .env
+```
+
+Variables utiles dans `.env` (non exhaustif):
+
+- `RTSP_URL`
+- `PIPELINE_INTERVAL_SECONDS`
+- `PIPELINE_MAX_BACKOFF_SECONDS`
+- `WHISPER_MODEL_SIZE_OR_PATH`
+- `WHISPER_DEVICE`
+- `WHISPER_COMPUTE_TYPE`
+
+### 2.3 Lancement
+
+```bash
+docker compose up -d --build
+```
+
+Services démarrés:
+
+- `capture`: exécute `capture_rtsp_audio.sh` en boucle.
+- `pipeline`: exécute `python pipeline_runner.py --loop`.
+- `ui`: exécute `streamlit run app.py --server.address 0.0.0.0 --server.port 8501`.
+
+UI disponible sur: <http://localhost:8501>
+
+### 2.4 Arrêt et logs
+
+```bash
+docker compose logs -f
+docker compose down
+```
+
+### 2.5 Volumes persistants
+
+Les dossiers suivants sont montés en persistants côté hôte:
+
+- `./audios`
+- `./audios_processed`
+- `./speech_segments`
+- `./transcriptions`
+
+---
+
+## 3) Mode manuel (legacy / debug)
+
+Ce mode reste utile pour du debug local hors Docker, mais il n’est plus le mode principal.
 
 ### Dépendances Python
 
@@ -29,45 +89,11 @@ Le script **`pipeline_runner.py`** orchestre les étapes 2 et 3 en mode one-shot
 pip install torch torchaudio silero-vad faster-whisper streamlit pandas pyyaml
 ```
 
-### (Optionnel) RNNoise
-
-```bash
-sudo apt update
-sudo apt install -y git autoconf automake libtool build-essential pkg-config
-cd ~
-git clone https://github.com/xiph/rnnoise.git
-cd rnnoise
-./autogen.sh
-./configure
-make
-```
-
----
-
-## 3) Démarrage rapide
-
-1. Configurer le flux RTSP :
-
-```bash
-cp .env.sample .env
-# éditer .env
-```
-
-2. Lancer la capture audio continue :
+### Démarrage manuel
 
 ```bash
 bash capture_rtsp_audio.sh
-```
-
-3. Lancer un run de pipeline (VAD + transcription) :
-
-```bash
 python pipeline_runner.py --once
-```
-
-4. Lancer l’UI :
-
-```bash
 streamlit run app.py
 ```
 
@@ -136,7 +162,7 @@ Sections principales :
 #### Whisper
 
 - `WHISPER_MODEL_SIZE_OR_PATH`  
-  Nom du modèle (ex: `small`, `medium`) ou chemin local vers un modèle.
+  Nom du modèle (ex: `small`, `medium`, `large-v3`) ou chemin local vers un modèle.
 - `WHISPER_DEVICE`  
   Périphérique d’inférence (`cpu`, `cuda`, etc.).
 - `WHISPER_COMPUTE_TYPE`  
@@ -210,9 +236,9 @@ python transcribe_segments.py \
 
 ---
 
-## 7) Exécution en service
+## 7) Exécution en service (hors Docker, optionnel)
 
-### Option A — systemd (recommandé)
+### Option A — systemd
 
 Créer `/etc/systemd/system/ecoute-pipeline.service` :
 
@@ -268,5 +294,6 @@ Le lockfile protège des chevauchements si un run précédent est encore actif.
 ## 9) Notes opérationnelles
 
 - Le script de capture détecte automatiquement si `ffmpeg` supporte `-rw_timeout`.
-- Pour un déploiement stable, privilégier `systemd` + redirection des logs (journalctl).
+- Pour un déploiement standard, privilégier Docker Compose.
+- `systemd`/`cron` restent valables pour un mode hors Docker.
 - Vérifier régulièrement l’espace disque (`audios/`, `speech_segments/`, base SQLite).
