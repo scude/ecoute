@@ -9,15 +9,24 @@ services:
       - .env
     environment:
       OUTPUT_DIR: /app/audios
+      HEARTBEAT_FILE: /app/runtime/capture_heartbeat.json
+      CAPTURE_HEARTBEAT_MAX_AGE_SECONDS: ${CAPTURE_HEARTBEAT_MAX_AGE_SECONDS:-180}
       PIPELINE_INTERVAL_SECONDS: ${PIPELINE_INTERVAL_SECONDS:-60}
     volumes:
       - ./audios:/app/audios
       - ./audios_processed:/app/audios_processed
       - ./speech_segments:/app/speech_segments
       - ./transcriptions:/app/transcriptions
+      - ./runtime:/app/runtime
     networks:
       - ecoute-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "./scripts/health_capture.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
 
   pipeline:
     build:

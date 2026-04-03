@@ -77,6 +77,25 @@ Les dossiers suivants sont montés en persistants côté hôte:
 - `./speech_segments`
 - `./transcriptions`
 
+- `./runtime`
+
+
+### 2.6 Santé du service `capture`
+
+Le service `capture` publie un heartbeat JSON dans `runtime/capture_heartbeat.json` (dans le conteneur: `/app/runtime/capture_heartbeat.json`) à intervalle régulier pendant la capture et lors des transitions d'état.
+
+Le `healthcheck` Docker Compose exécute `./scripts/health_capture.sh` et applique les critères suivants :
+
+- **Healthy** si le fichier heartbeat existe, contient `updated_at_epoch`, que son âge est inférieur ou égal à `CAPTURE_HEARTBEAT_MAX_AGE_SECONDS` (180s par défaut), et que `state` est dans `{starting, connecting, capturing, reconnecting, restarting}`.
+- **Unhealthy** si le heartbeat est absent/invalide, trop ancien (plus vieux que le seuil), ou si l'état n'est pas autorisé.
+
+Le heartbeat inclut notamment :
+
+- `updated_at` / `updated_at_epoch`
+- `last_segment_at` / `last_segment_epoch` (dernier segment WAV produit)
+- `reconnect_errors` (compteur de reconnexions en erreur)
+- `state` (état courant de la capture)
+
 ---
 
 ## 3) Mode manuel (legacy / debug)
