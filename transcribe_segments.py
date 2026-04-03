@@ -47,6 +47,16 @@ def parse_segment_start_ms(audio_file: Path) -> int:
     return int(match.group(1))
 
 
+def parse_segment_end_ms(audio_file: Path) -> int:
+    """
+    Parse VAD segment end offset from file name.
+    """
+    match = SEGMENT_OFFSET_RE.search(audio_file.name)
+    if not match:
+        return 0
+    return int(match.group(2))
+
+
 def normalize_confidence(avg_logprob: float) -> float:
     """
     Convert average log-probability to a readable confidence score in [0.0, 1.0].
@@ -79,6 +89,8 @@ def transcribe_file(
 
     capture_start = parse_capture_start(audio_file)
     segment_start_ms = parse_segment_start_ms(audio_file)
+    segment_end_ms = parse_segment_end_ms(audio_file)
+    audio_path = str(audio_file.resolve())
 
     entries: List[Dict[str, Any]] = []
     for segment in segments:
@@ -102,7 +114,9 @@ def transcribe_file(
                 "timestamp_abs": timestamp_abs,
                 "text": text,
                 "confidence": round(normalize_confidence(segment.avg_logprob), 4),
-                "audio_path": str(audio_file),
+                "audio_path": audio_path,
+                "vad_start_ms": segment_start_ms,
+                "vad_end_ms": segment_end_ms,
                 "segment_start_sec": round(segment_start_sec, 3),
                 "segment_end_sec": round(segment_end_sec, 3),
             }
