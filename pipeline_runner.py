@@ -5,9 +5,10 @@ import fcntl
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from pipeline_config import DEFAULT_CONFIG_PATH, load_config
 from transcribe_segments import transcribe_pending_segments
@@ -15,6 +16,7 @@ from vad_segment import process_pending_wavs
 
 
 LOCK_PATH = Path("/tmp/ecoute_pipeline.lock")
+STATUS_PATH = Path("runtime/pipeline_status.json")
 
 
 class JsonFormatter(logging.Formatter):
@@ -72,6 +74,56 @@ def setup_logging() -> None:
 
 def log(level: int, message: str, **fields: Any) -> None:
     logger.log(level, message, extra={"extra_fields": fields})
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def compute_backlog_stats(config: Dict[str, Any]) -> Dict[str, int]:
+    input_audio_dir = Path(config["paths"]["input_audio_dir"])
+    speech_segments_dir = Path(config["paths"]["speech_segments_dir"])
+
+    pending_wavs = len(list(input_audio_dir.glob("*.wav"))) if input_audio_dir.exists() else 0
+    pending_segments = (
+        len(list(speech_segments_dir.glob("*.wav"))) if speech_segments_dir.exists() else 0
+    )
+
+    return {
+        "pending_wavs": pending_wavs,
+        "pending_segments": pending_segments,
+    }
+
+
+def write_pipeline_status(
+    *,
+    last_run_started_at: Optional[str],
+    last_run_finished_at: Optional[str],
+    last_run_success: bool,
+    last_error: Optional[str],
+    vad_stats: Optional[Dict[str, Any]],
+    transcription_stats: Optional[Dict[str, Any]],
+    next_scheduled_in_seconds: Optional[int],
+    backlog_stats: Optional[Dict[str, int]],
+) -> None:
+    payload: Dict[str, Any] = {
+        "last_run_started_at": last_run_started_at,
+        "last_run_finished_at": last_run_finished_at,
+        "last_run_success": last_run_success,
+        "last_error": last_error,
+        "vad_stats": vad_stats,
+        "transcription_stats": transcription_stats,
+        "next_scheduled_in_seconds": next_scheduled_in_seconds,
+    }
+
+    if backlog_stats is not None:
+        payload["backlog_stats"] = backlog_stats
+
+    STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    STATUS_PATH.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def run_pipeline_once(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -149,10 +201,35 @@ def main() -> None:
 
     try:
         while True:
+            started_at = utc_now_iso()
+            finished_at: Optional[str] = None
             try:
-                run_pipeline_once(config)
+                run_summary = run_pipeline_once(config)
+                finished_at = utc_now_iso()
+                next_scheduled = interval_seconds if loop_mode else None
+                write_pipeline_status(
+                    last_run_started_at=started_at,
+                    last_run_finished_at=finished_at,
+                    last_run_success=True,
+                    last_error=None,
+                    vad_stats=run_summary["vad"],
+                    transcription_stats=run_summary["transcription"],
+                    next_scheduled_in_seconds=next_scheduled,
+                    backlog_stats=compute_backlog_stats(config),
+                )
                 backoff_seconds = max(1, min(5, interval_seconds))
             except Exception as exc:
+                finished_at = utc_now_iso()
+                write_pipeline_status(
+                    last_run_started_at=started_at,
+                    last_run_finished_at=finished_at,
+                    last_run_success=False,
+                    last_error=str(exc),
+                    vad_stats=None,
+                    transcription_stats=None,
+                    next_scheduled_in_seconds=backoff_seconds if loop_mode else None,
+                    backlog_stats=compute_backlog_stats(config),
+                )
                 log(
                     logging.ERROR,
                     "pipeline_run_failed",

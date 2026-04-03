@@ -49,6 +49,7 @@ services:
       - ./audios_processed:/app/audios_processed
       - ./speech_segments:/app/speech_segments
       - ./transcriptions:/app/transcriptions
+      - ./runtime:/app/runtime
     networks:
       - ecoute-net
     restart: unless-stopped
@@ -69,6 +70,7 @@ services:
       - ./audios_processed:/app/audios_processed
       - ./speech_segments:/app/speech_segments
       - ./transcriptions:/app/transcriptions
+      - ./runtime:/app/runtime
     ports:
       - "8501:8501"
     networks:
