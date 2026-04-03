@@ -53,9 +53,15 @@ def transcribe_file(model: WhisperModel, audio_file: Path, language: str = "fr")
         str(audio_file),
         language=language,
         vad_filter=False,
-        beam_size=5,
+        beam_size=1,
+        best_of=1,
+        patience=1.0,
         condition_on_previous_text=False,
         temperature=0.0,
+        compression_ratio_threshold=1.8,
+        log_prob_threshold=-0.9,
+        no_speech_threshold=0.3,
+
     )
 
     capture_start = parse_capture_start(audio_file)

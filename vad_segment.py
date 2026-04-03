@@ -141,10 +141,10 @@ def process_file(
         audio,
         model,
         sampling_rate=sample_rate,
-        threshold=0.65,
-        min_speech_duration_ms=800,
-        min_silence_duration_ms=1000,
-        speech_pad_ms=200,
+        threshold=0.5,
+        min_speech_duration_ms=1200,
+        min_silence_duration_ms=1200,
+        speech_pad_ms=150,
         return_seconds=False,
     )
 
