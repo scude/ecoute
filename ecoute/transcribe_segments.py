@@ -10,8 +10,8 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from faster_whisper import WhisperModel
 
-from pipeline_config import DEFAULT_CONFIG_PATH, load_config
-from storage import DEFAULT_DB_PATH, SQLiteStorage
+from ecoute.pipeline_config import DEFAULT_CONFIG_PATH, load_config
+from ecoute.storage import DEFAULT_DB_PATH, SQLiteStorage
 
 
 CAPTURE_STEM_RE = re.compile(r".*?(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})")

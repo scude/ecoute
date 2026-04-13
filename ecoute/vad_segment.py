@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from silero_vad import get_speech_timestamps, load_silero_vad
 
-from pipeline_config import DEFAULT_CONFIG_PATH, load_config
+from ecoute.pipeline_config import DEFAULT_CONFIG_PATH, load_config
 
 
 SampleRate = int

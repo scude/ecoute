@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from transcribe_segments import (
+from ecoute.transcribe_segments import (
     parse_capture_start,
     parse_segment_start_ms,
     parse_segment_end_ms,
@@ -63,7 +63,7 @@ def test_normalize_confidence():
     assert normalize_confidence(1.0) == 1.0 # capped at 1.0
 
 
-@patch("transcribe_segments.parse_capture_start")
+@patch("ecoute.transcribe_segments.parse_capture_start")
 def test_transcribe_file(mock_parse_capture, tmp_path):
     # Setup mock model and its return value
     mock_model = MagicMock()

@@ -5,7 +5,7 @@ from unittest.mock import patch
 import yaml
 import pytest
 
-from pipeline_config import _deep_merge, load_config, DEFAULT_CONFIG
+from ecoute.pipeline_config import _deep_merge, load_config, DEFAULT_CONFIG
 
 
 def test_deep_merge():

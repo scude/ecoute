@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pipeline_runner import (
+from ecoute.pipeline_runner import (
     PipelineLock,
     compute_backlog_stats,
     write_pipeline_status,
@@ -55,7 +55,7 @@ def test_compute_backlog_stats(tmp_path):
 
 def test_write_pipeline_status(tmp_path):
     status_path = tmp_path / "status.json"
-    with patch("pipeline_runner.STATUS_PATH", status_path):
+    with patch("ecoute.pipeline_runner.STATUS_PATH", status_path):
         write_pipeline_status(
             last_run_started_at="start",
             last_run_finished_at="end",
@@ -73,8 +73,8 @@ def test_write_pipeline_status(tmp_path):
         assert data["vad_stats"]["files"] == 1
 
 
-@patch("pipeline_runner.process_pending_wavs")
-@patch("pipeline_runner.transcribe_pending_segments")
+@patch("ecoute.pipeline_runner.process_pending_wavs")
+@patch("ecoute.pipeline_runner.transcribe_pending_segments")
 def test_run_pipeline_once(mock_transcribe, mock_vad):
     mock_vad.return_value = {"processed_files": 2, "generated_segments": 10}
     mock_transcribe.return_value = {"new_segments": 10, "new_rows": 8}

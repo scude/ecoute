@@ -6,8 +6,8 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-import monitoring
-from monitoring import (
+import ecoute.monitoring as monitoring
+from ecoute.monitoring import (
     _parse_datetime,
     _human_duration,
     _format_bytes,
@@ -100,8 +100,8 @@ def test_read_runtime_json(tmp_path):
     assert read_runtime_json(path) is None
 
 
-@patch("monitoring.shutil.disk_usage")
-@patch("monitoring._now_utc")
+@patch("ecoute.monitoring.shutil.disk_usage")
+@patch("ecoute.monitoring._now_utc")
 def test_get_monitoring_snapshot(mock_now, mock_disk_usage, tmp_path):
     # Setup paths and environment
     runtime_dir = tmp_path / "runtime"

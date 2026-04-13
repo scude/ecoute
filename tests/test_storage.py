@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from storage import SQLiteStorage, DEFAULT_DB_PATH
+from ecoute.storage import SQLiteStorage
 
 
 @pytest.fixture
@@ -19,7 +19,6 @@ def storage(temp_db_path):
     """Provides an SQLiteStorage instance with a temporary database."""
     s = SQLiteStorage(temp_db_path)
     yield s
-    # Clean up after tests if necessary (though tmp_path handles file deletion)
 
 
 def test_init_creates_db_and_schema(temp_db_path):

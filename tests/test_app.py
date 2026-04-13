@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
-from app import (
+from ui.app import (
     resolve_audio_path,
     confidence_badge,
     format_timestamp_fr,

@@ -2,7 +2,8 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app
 
 WORKDIR /app
 
@@ -24,10 +25,11 @@ RUN pip install --upgrade pip \
         torch \
         torchaudio \
         silero-vad \
-        faster-whisper
+        faster-whisper \
+        pytest
 
 COPY . /app
 
-RUN chmod +x /app/capture_rtsp_audio.sh /app/rnnoise_denoise.sh
+RUN chmod +x /app/scripts/*.sh
 
-CMD ["python", "pipeline_runner.py", "--loop"]
+CMD ["python", "ecoute/pipeline_runner.py", "--loop"]

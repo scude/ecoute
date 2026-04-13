@@ -10,9 +10,9 @@ from pathlib import Path
 import time
 from typing import Any, Dict, Optional
 
-from pipeline_config import DEFAULT_CONFIG_PATH, load_config
-from transcribe_segments import transcribe_pending_segments
-from vad_segment import process_pending_wavs
+from ecoute.pipeline_config import DEFAULT_CONFIG_PATH, load_config
+from ecoute.transcribe_segments import transcribe_pending_segments
+from ecoute.vad_segment import process_pending_wavs
 
 
 LOCK_PATH = Path("/tmp/ecoute_pipeline.lock")

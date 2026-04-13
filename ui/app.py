@@ -8,8 +8,8 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from monitoring import get_monitoring_snapshot
-from storage import DEFAULT_DB_PATH, SQLiteStorage
+from ecoute.monitoring import get_monitoring_snapshot
+from ecoute.storage import DEFAULT_DB_PATH, SQLiteStorage
 
 TRANSCRIPTIONS_PATH = Path("transcriptions/transcriptions.json")
 

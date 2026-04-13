@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ecoute-capture
-    command: ["bash", "-c", "./capture_rtsp_audio.sh"]
+    command: ["bash", "/app/scripts/capture_rtsp_audio.sh"]
     env_file:
       - .env
     environment:
@@ -22,7 +22,7 @@ services:
       - ecoute-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "./scripts/health_capture.sh"]
+      test: ["CMD-SHELL", "/app/scripts/health_capture.sh"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -33,7 +33,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ecoute-pipeline
-    command: ["python", "pipeline_runner.py", "--loop"]
+    command: ["python", "ecoute/pipeline_runner.py", "--loop"]
     env_file:
       - .env
     environment:
@@ -59,7 +59,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ecoute-ui
-    command: ["streamlit", "run", "app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]
+    command: ["streamlit", "run", "ui/app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]
     env_file:
       - .env
     environment:

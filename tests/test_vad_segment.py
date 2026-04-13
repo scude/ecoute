@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import torch
 
-from vad_segment import (
+from ecoute.vad_segment import (
     load_wav_mono_16k,
     speech_timestamps_to_seconds,
     save_chunk_wav,
@@ -107,9 +107,9 @@ def test_cleanup_processed_file(tmp_path):
     assert not stale_path.exists()
 
 
-@patch("vad_segment.load_wav_mono_16k")
-@patch("vad_segment.get_speech_timestamps")
-@patch("vad_segment.save_speech_segments")
+@patch("ecoute.vad_segment.load_wav_mono_16k")
+@patch("ecoute.vad_segment.get_speech_timestamps")
+@patch("ecoute.vad_segment.save_speech_segments")
 def test_process_file(mock_save, mock_get_ts, mock_load, tmp_path):
     input_path = Path("test.wav")
     mock_load.return_value = torch.zeros(16000)
