@@ -62,9 +62,11 @@ def load_transcriptions_sqlite(
 
 def confidence_badge(conf: float | None) -> str:
     if conf is None or pd.isna(conf): return "⚪ N/A"
-    if conf < 0.4: return "🔴 Faible"
-    if conf < 0.7: return "🟠 Moyen"
-    return "🟢 Élevé"
+    
+    percent = int(conf * 100)
+    if conf < 0.4: return f"🔴 Faible ({percent}%)"
+    if conf < 0.7: return f"🟠 Moyen ({percent}%)"
+    return f"🟢 Élevé ({percent}%)"
 
 def format_timestamp_fr(ts_raw: Any) -> str:
     ts = pd.to_datetime(ts_raw, errors="coerce")
