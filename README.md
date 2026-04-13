@@ -1,44 +1,44 @@
-# Écoute : Pipeline audio RTSP → VAD → transcription (Whisper) → UI
+# Écoute: RTSP Audio Pipeline -> VAD -> Transcription (Whisper) -> UI
 
-Ce projet capture un flux audio (RTSP), découpe automatiquement la parole avec VAD, transcrit les segments avec Whisper, puis expose les résultats dans une interface Streamlit.
+This project captures an audio stream (RTSP), automatically segments speech with VAD, transcribes the segments with Whisper, then exposes results in a Streamlit interface.
 
 ---
 
-## 1) Fonctionnement global
+## 1) Overview
 
-Le pipeline suit cet ordre :
+The pipeline runs in this order:
 
-1. **Capture RTSP** (`capture_rtsp_audio.sh`)  
-   Génère des fichiers WAV dans `audios/`.
+1. **RTSP capture** (`capture_rtsp_audio.sh`)  
+   Generates WAV files in `audios/`.
 2. **VAD** (`vad_segment.py`)  
-   Détecte les portions parlées, exporte les segments dans `speech_segments/`, puis supprime les WAV source traités (et nettoie une éventuelle copie homonyme dans `audios_processed/`).
-3. **Transcription incrémentale** (`transcribe_segments.py`)  
-   Lit les segments non traités, écrit les résultats dans SQLite, export JSON optionnel.
-4. **UI Streamlit** (`app.py`)  
-   Recherche/lecture des transcriptions.
+   Detects spoken portions, exports segments to `speech_segments/`, then deletes processed source WAV files (and removes a possible duplicate copy in `audios_processed/`).
+3. **Incremental transcription** (`transcribe_segments.py`)  
+   Reads unprocessed segments, writes results to SQLite, optional JSON export.
+4. **Streamlit UI** (`app.py`)  
+   Search and playback for transcriptions.
 
-Le script **`pipeline_runner.py`** orchestre les étapes 2 et 3 en mode one-shot ou boucle continue.
+The **`pipeline_runner.py`** script orchestrates steps 2 and 3 in one-shot or continuous loop mode.
 
 ---
 
-## 2) Exécution recommandée: Docker Compose
+## 2) Recommended run mode: Docker Compose
 
-Le projet est maintenant prévu pour tourner via Docker Compose (capture + pipeline + UI),
-ce qui remplace l’installation manuelle de dépendances dans la majorité des cas.
+The project is now intended to run via Docker Compose (capture + pipeline + UI),
+which replaces manual dependency installation in most cases.
 
-### 2.1 Prérequis
+### 2.1 Prerequisites
 
 - Docker Engine
-- Docker Compose (plugin `docker compose`)
+- Docker Compose (the `docker compose` plugin)
 
 ### 2.2 Configuration
 
 ```bash
 cp .env.sample .env
-# éditer au minimum RTSP_URL dans .env
+# edit at least RTSP_URL in .env
 ```
 
-Variables utiles dans `.env` (non exhaustif):
+Useful variables in `.env` (non-exhaustive):
 
 - `RTSP_URL`
 - `PIPELINE_INTERVAL_SECONDS`
@@ -47,68 +47,66 @@ Variables utiles dans `.env` (non exhaustif):
 - `WHISPER_DEVICE`
 - `WHISPER_COMPUTE_TYPE`
 
-### 2.3 Lancement
+### 2.3 Start
 
 ```bash
 docker compose up -d --build
 ```
 
-Services démarrés:
+Started services:
 
-- `capture`: exécute `capture_rtsp_audio.sh` en boucle.
-- `pipeline`: exécute `python pipeline_runner.py --loop`.
-- `ui`: exécute `streamlit run app.py --server.address 0.0.0.0 --server.port 8501`.
+- `capture`: runs `capture_rtsp_audio.sh` in a loop.
+- `pipeline`: runs `python pipeline_runner.py --loop`.
+- `ui`: runs `streamlit run app.py --server.address 0.0.0.0 --server.port 8501`.
 
-UI disponible sur: <http://localhost:8501>
+UI available at: <http://localhost:8501>
 
-### 2.4 Arrêt et logs
+### 2.4 Stop and logs
 
 ```bash
 docker compose logs -f
 docker compose down
 ```
 
-### 2.5 Volumes persistants
+### 2.5 Persistent volumes
 
-Les dossiers suivants sont montés en persistants côté hôte:
+The following directories are mounted as persistent host volumes:
 
 - `./audios`
 - `./audios_processed`
 - `./speech_segments`
 - `./transcriptions`
-
 - `./runtime`
 
+### 2.6 `capture` service health
 
-### 2.6 Santé du service `capture`
+The `capture` service writes a JSON heartbeat to `runtime/capture_heartbeat.json` (inside the container: `/app/runtime/capture_heartbeat.json`) at a regular interval during capture and during state transitions.
 
-Le service `capture` publie un heartbeat JSON dans `runtime/capture_heartbeat.json` (dans le conteneur: `/app/runtime/capture_heartbeat.json`) à intervalle régulier pendant la capture et lors des transitions d'état.
+The Docker Compose `healthcheck` runs `./scripts/health_capture.sh` and applies the following criteria:
 
-Le `healthcheck` Docker Compose exécute `./scripts/health_capture.sh` et applique les critères suivants :
+- **Healthy** if the heartbeat file exists, contains `updated_at_epoch`, its age is less than or equal to `CAPTURE_HEARTBEAT_MAX_AGE_SECONDS` (180s by default), and `state` is in `{starting, connecting, capturing, reconnecting, restarting}`.
+- **Unhealthy** if the heartbeat is missing/invalid, too old (older than the threshold), or if the state is not allowed.
 
-- **Healthy** si le fichier heartbeat existe, contient `updated_at_epoch`, que son âge est inférieur ou égal à `CAPTURE_HEARTBEAT_MAX_AGE_SECONDS` (180s par défaut), et que `state` est dans `{starting, connecting, capturing, reconnecting, restarting}`.
-- **Unhealthy** si le heartbeat est absent/invalide, trop ancien (plus vieux que le seuil), ou si l'état n'est pas autorisé.
-
-Le heartbeat inclut notamment :
+The heartbeat includes:
 
 - `updated_at` / `updated_at_epoch`
-- `last_segment_at` / `last_segment_epoch` (dernier segment WAV produit)
-- `reconnect_errors` (compteur de reconnexions en erreur)
-- `state` (état courant de la capture)
+- `last_segment_at` / `last_segment_epoch` (latest WAV segment produced)
+- `reconnect_errors` (reconnection error counter)
+- `state` (current capture state)
 
 ---
 
-## 3) Mode manuel (legacy / debug)
+## 3) Manual mode (legacy / debugging)
 
-Ce mode reste utile pour du debug local hors Docker, mais il n’est plus le mode principal.
+This mode is still useful for local debugging outside Docker, but it is no longer the primary mode.
 
-### Dépendances Python
+### Python dependencies
 
 ```bash
 pip install torch torchaudio silero-vad faster-whisper streamlit pandas pyyaml
 ```
 
-### Démarrage manuel
+### Manual startup
 
 ```bash
 bash capture_rtsp_audio.sh
@@ -118,107 +116,107 @@ streamlit run app.py
 
 ---
 
-## 4) Orchestrateur `pipeline_runner.py`
+## 4) `pipeline_runner.py` orchestrator
 
-Deux modes sont disponibles :
+Two modes are available:
 
-- `--once` : exécute **une seule** séquence `VAD -> transcription`, puis quitte.
-- `--loop` : exécute la séquence en continu avec un intervalle configurable.
+- `--once`: runs exactly one `VAD -> transcription` sequence, then exits.
+- `--loop`: runs the sequence continuously with a configurable interval.
 
-Exemples :
+Examples:
 
 ```bash
 python pipeline_runner.py --once
 python pipeline_runner.py --loop
 ```
 
-### Robustesse incluse
+### Built-in robustness
 
-- **Lockfile**: `/tmp/ecoute_pipeline.lock` (évite les exécutions concurrentes).
-- **Logs JSON structurés**: niveau, message, durée par étape, compteurs de fichiers.
-- **Backoff exponentiel** en cas d’erreur (jusqu’à `pipeline.max_backoff_seconds`).
+- **Lockfile**: `/tmp/ecoute_pipeline.lock` (prevents concurrent runs).
+- **Structured JSON logs**: level, message, per-step duration, file counters.
+- **Exponential backoff** on errors (up to `pipeline.max_backoff_seconds`).
 
 ---
 
 ## 5) Configuration
 
-La configuration est centralisée dans **`config.yaml`**.  
-Les variables d’environnement peuvent surcharger les valeurs du fichier.
+Configuration is centralized in **`config.yaml`**.  
+Environment variables can override file values.
 
-### 5.1 Fichier `config.yaml`
+### 5.1 `config.yaml` file
 
-Sections principales :
+Main sections:
 
-- `paths` : chemins d’entrée/sortie
-- `pipeline` : intervalle et backoff
-- `whisper` : modèle et paramètres d’inférence
-- `vad` : paramètres de détection de parole
+- `paths`: input/output paths
+- `pipeline`: interval and backoff
+- `whisper`: model and inference parameters
+- `vad`: speech detection parameters
 
-### 5.2 Variables d’environnement supportées
+### 5.2 Supported environment variables
 
-> Priorité: **variables d’environnement > config.yaml > valeurs par défaut internes**
+> Priority: **environment variables > config.yaml > internal defaults**
 
 #### Pipeline
 
 - `PIPELINE_INTERVAL_SECONDS`  
-  Intervalle entre deux runs en mode `--loop`.
+  Interval between runs in `--loop` mode.
 - `PIPELINE_MAX_BACKOFF_SECONDS`  
-  Durée maximale du backoff après erreur.
+  Maximum backoff duration after an error.
 
-#### Chemins
+#### Paths
 
 - `INPUT_AUDIO_DIR`  
-  Dossier des WAV de capture (ex: `audios`).
+  Capture WAV directory (e.g., `audios`).
 - `SPEECH_SEGMENTS_DIR`  
-  Dossier des segments VAD (ex: `speech_segments`).
+  VAD segments directory (e.g., `speech_segments`).
 - `PROCESSED_AUDIO_DIR`  
-  Dossier optionnel de nettoyage d’anciens WAV source traités (ex: `audios_processed`).
+  Optional cleanup directory for old processed source WAV files (e.g., `audios_processed`).
 - `TRANSCRIPTIONS_DB_PATH`  
-  Chemin SQLite des transcriptions.
+  SQLite path for transcriptions.
 - `TRANSCRIPTIONS_JSON_OUTPUT`  
-  Chemin du fichier d’export JSON.
+  JSON export file path.
 
 #### Whisper
 
 - `WHISPER_MODEL_SIZE_OR_PATH`  
-  Nom du modèle (ex: `small`, `medium`, `large-v3`) ou chemin local vers un modèle.
+  Model name (e.g., `small`, `medium`, `large-v3`) or local model path.
 - `WHISPER_DEVICE`  
-  Périphérique d’inférence (`cpu`, `cuda`, etc.).
+  Inference device (`cpu`, `cuda`, etc.).
 - `WHISPER_COMPUTE_TYPE`  
-  Type de calcul/quantification utilisé par faster-whisper (ex: `int8`, `float16`, `float32`).
+  Compute/quantization type used by faster-whisper (e.g., `int8`, `float16`, `float32`).
 - `WHISPER_LANGUAGE`  
-  Langue forcée pour la transcription (ex: `fr`, `en`).
+  Forced transcription language (e.g., `fr`, `en`).
 - `WHISPER_BEAM_SIZE`  
-  Taille du beam search (plus grand = potentiellement plus précis mais plus lent).
+  Beam search size (larger = potentially more accurate but slower).
 - `WHISPER_BEST_OF`  
-  Nombre de candidats évalués pour sélectionner le meilleur résultat.
+  Number of candidate decodes evaluated to select the best result.
 - `WHISPER_PATIENCE`  
-  Paramètre de patience du décodage beam search.
+  Beam search decode patience parameter.
 - `WHISPER_CONDITION_ON_PREVIOUS_TEXT` (`true/false`, `1/0`, `yes/no`)  
-  Si activé, le texte précédent influence le segment courant (cohérence ↑, risque de dérive ↑).
+  If enabled, previous text influences the current segment (higher coherence, higher drift risk).
 - `WHISPER_TEMPERATURE`  
-  Température de décodage (plus élevé = plus de diversité, moins déterministe).
+  Decoding temperature (higher = more diversity, less deterministic).
 - `WHISPER_COMPRESSION_RATIO_THRESHOLD`  
-  Seuil de filtrage des sorties jugées anormales/trop compressées.
+  Filter threshold for outputs considered abnormal/over-compressed.
 - `WHISPER_LOG_PROB_THRESHOLD`  
-  Seuil minimal de log-probabilité pour accepter une sortie.
+  Minimum log-probability threshold to accept an output.
 - `WHISPER_NO_SPEECH_THRESHOLD`  
-  Seuil de détection « non-parole » au niveau Whisper.
+  Whisper-level no-speech detection threshold.
 
 #### VAD
 
 - `VAD_SAMPLE_RATE`  
-  Fréquence d’échantillonnage attendue en entrée (Hz), typiquement `16000`.
+  Expected input sampling rate (Hz), typically `16000`.
 - `VAD_THRESHOLD`  
-  Seuil de détection de parole (plus haut = plus strict).
+  Speech detection threshold (higher = stricter).
 - `VAD_MIN_SPEECH_DURATION_MS`  
-  Durée minimale (ms) pour valider un segment de parole.
+  Minimum duration (ms) to validate a speech segment.
 - `VAD_MIN_SILENCE_DURATION_MS`  
-  Durée minimale (ms) de silence pour couper deux segments.
+  Minimum silence duration (ms) to split two segments.
 - `VAD_SPEECH_PAD_MS`  
-  Marge (ms) ajoutée avant/après chaque segment détecté.
+  Padding margin (ms) added before/after each detected segment.
 
-### 5.3 Exemple d’override
+### 5.3 Override example
 
 ```bash
 export PIPELINE_INTERVAL_SECONDS=30
@@ -229,21 +227,21 @@ python pipeline_runner.py --loop
 
 ---
 
-## 6) Utilisation des scripts unitaires
+## 6) Using standalone scripts
 
-### VAD seul
+### VAD only
 
 ```bash
 python vad_segment.py
 ```
 
-### Transcription seule
+### Transcription only
 
 ```bash
 python transcribe_segments.py --export-json
 ```
 
-Options utiles :
+Useful options:
 
 ```bash
 python transcribe_segments.py \
@@ -255,11 +253,11 @@ python transcribe_segments.py \
 
 ---
 
-## 7) Exécution en service (hors Docker, optionnel)
+## 7) Service mode (outside Docker, optional)
 
-### Option A — systemd
+### Option A - systemd
 
-Créer `/etc/systemd/system/ecoute-pipeline.service` :
+Create `/etc/systemd/system/ecoute-pipeline.service`:
 
 ```ini
 [Unit]
@@ -278,7 +276,7 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-Puis :
+Then:
 
 ```bash
 sudo systemctl daemon-reload
@@ -286,33 +284,33 @@ sudo systemctl enable --now ecoute-pipeline.service
 sudo systemctl status ecoute-pipeline.service
 ```
 
-### Option B — cron
+### Option B - cron
 
-Exécution périodique en one-shot :
+Periodic one-shot execution:
 
 ```cron
 */2 * * * * cd /workspace/ecoute && /usr/bin/python3 pipeline_runner.py --once >> /var/log/ecoute_pipeline.log 2>&1
 ```
 
-Le lockfile protège des chevauchements si un run précédent est encore actif.
+The lockfile prevents overlap if a previous run is still active.
 
 ---
 
-## 8) Interface Streamlit
+## 8) Streamlit interface
 
-`app.py` permet :
+`app.py` provides:
 
-- affichage des transcriptions triées,
-- filtre texte,
-- seuil de confiance,
-- lecture des extraits audio (`st.audio`),
-- message explicite si le fichier WAV n’existe plus.
+- sorted transcription display,
+- text filtering,
+- confidence threshold,
+- audio snippet playback (`st.audio`),
+- explicit message when the WAV file no longer exists.
 
 ---
 
-## 9) Notes opérationnelles
+## 9) Operational notes
 
-- Le script de capture détecte automatiquement si `ffmpeg` supporte `-rw_timeout`.
-- Pour un déploiement standard, privilégier Docker Compose.
-- `systemd`/`cron` restent valables pour un mode hors Docker.
-- Vérifier régulièrement l’espace disque (`audios/`, `speech_segments/`, base SQLite).
+- The capture script automatically detects whether `ffmpeg` supports `-rw_timeout`.
+- For a standard deployment, prefer Docker Compose.
+- `systemd`/`cron` remain valid for outside-Docker mode.
+- Regularly monitor disk usage (`audios/`, `speech_segments/`, SQLite database).
