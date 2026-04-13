@@ -38,10 +38,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "vad": {
         "sample_rate": 16000,
-        "threshold": 0.5,
-        "min_speech_duration_ms": 1200,
-        "min_silence_duration_ms": 1200,
-        "speech_pad_ms": 150,
+        "threshold": 0.45,
+        "min_speech_duration_ms": 300,
+        "min_silence_duration_ms": 500,
+        "speech_pad_ms": 200,
     },
 }
 
