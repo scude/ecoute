@@ -12,6 +12,11 @@ from ecoute.monitoring import get_monitoring_snapshot
 from ecoute.storage import DEFAULT_DB_PATH, SQLiteStorage
 
 TRANSCRIPTIONS_PATH = Path("transcriptions/transcriptions.json")
+CSS_FILE = Path(__file__).parent / "styles" / "navigation.css"
+
+def inject_local_css(css_file: Path) -> None:
+    if css_file.exists():
+        st.markdown(f"<style>{css_file.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
 
 def resolve_audio_path(audio_path_raw: str) -> Path:
     requested = Path(audio_path_raw)
@@ -157,6 +162,7 @@ def render_transcriptions_tab() -> None:
 
 def main() -> None:
     st.set_page_config(page_title="Écoute", layout="wide", initial_sidebar_state="expanded")
+    inject_local_css(CSS_FILE)
     
     # État par défaut du menu
     if "nav_menu" not in st.session_state:
@@ -171,7 +177,7 @@ def main() -> None:
     with st.sidebar:
         st.title("🎧 Écoute")
         selected = st.radio(
-            "Navigation",
+            "",
             ["Transcriptions", "Monitoring"],
             key="nav_menu"
         )
