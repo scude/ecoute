@@ -21,6 +21,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "pipeline": {
         "interval_seconds": 60,
         "max_backoff_seconds": 300,
+        "max_age_seconds": 300,
     },
     "whisper": {
         "model_size_or_path": "medium",
@@ -48,6 +49,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 ENV_OVERRIDES = {
     "PIPELINE_INTERVAL_SECONDS": ("pipeline", "interval_seconds", int),
     "PIPELINE_MAX_BACKOFF_SECONDS": ("pipeline", "max_backoff_seconds", int),
+    "PIPELINE_MAX_AGE_SECONDS": ("pipeline", "max_age_seconds", int),
     "INPUT_AUDIO_DIR": ("paths", "input_audio_dir", str),
     "SPEECH_SEGMENTS_DIR": ("paths", "speech_segments_dir", str),
     "PROCESSED_AUDIO_DIR": ("paths", "processed_audio_dir", str),

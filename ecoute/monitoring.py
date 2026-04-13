@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ecoute.pipeline_config import load_config
+
 
 RUNTIME_DIR = Path(os.environ.get("RUNTIME_DIR", "runtime"))
 CAPTURE_HEARTBEAT_PATH = RUNTIME_DIR / "capture_heartbeat.json"
@@ -111,6 +113,9 @@ def _format_bytes(size_bytes: int) -> str:
 
 
 def get_monitoring_snapshot() -> dict[str, Any]:
+    config = load_config()
+    pipeline_max_age = config["pipeline"]["max_age_seconds"]
+
     capture_payload = read_runtime_json(CAPTURE_HEARTBEAT_PATH) or {}
     pipeline_payload = read_runtime_json(PIPELINE_STATUS_PATH) or {}
 
@@ -118,12 +123,19 @@ def get_monitoring_snapshot() -> dict[str, Any]:
         capture_payload.get("updated_at_epoch") or capture_payload.get("updated_at")
     )
     capture_age_seconds = _file_age_seconds(capture_updated)
-    capture_recent = (
+    capture_healthy = (
         capture_age_seconds is not None and capture_age_seconds <= CAPTURE_HEARTBEAT_MAX_AGE_SECONDS
     )
 
     pipeline_finished_at = _parse_datetime(pipeline_payload.get("last_run_finished_at"))
     pipeline_age_seconds = _file_age_seconds(pipeline_finished_at)
+    
+    pipeline_success = pipeline_payload.get("last_run_success")
+    pipeline_healthy = (
+        pipeline_success is True 
+        and pipeline_age_seconds is not None 
+        and pipeline_age_seconds <= pipeline_max_age
+    )
 
     pending_audios = len(list(AUDIOS_DIR.glob("*.wav"))) if AUDIOS_DIR.exists() else 0
     pending_segments = len(list(SPEECH_SEGMENTS_DIR.glob("*.wav"))) if SPEECH_SEGMENTS_DIR.exists() else 0
@@ -148,18 +160,21 @@ def get_monitoring_snapshot() -> dict[str, Any]:
         }
 
     return {
+        "overall_healthy": capture_healthy and pipeline_healthy,
         "capture": {
             "state": capture_payload.get("state", "unknown"),
-            "recent": capture_recent,
+            "healthy": capture_healthy,
             "age_seconds": capture_age_seconds,
             "age_human": _human_duration(capture_age_seconds),
             "max_age_seconds": CAPTURE_HEARTBEAT_MAX_AGE_SECONDS,
         },
         "pipeline": {
-            "last_run_success": pipeline_payload.get("last_run_success"),
+            "healthy": pipeline_healthy,
+            "last_run_success": pipeline_success,
             "last_error": pipeline_payload.get("last_error"),
             "age_seconds": pipeline_age_seconds,
             "age_human": _human_duration(pipeline_age_seconds),
+            "max_age_seconds": pipeline_max_age,
             "last_run_started_at": pipeline_payload.get("last_run_started_at"),
             "last_run_finished_at": pipeline_payload.get("last_run_finished_at"),
         },

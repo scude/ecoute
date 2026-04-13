@@ -127,6 +127,7 @@ class SQLiteStorage:
         min_confidence: float = 0.0,
         limit: int = 200,
         offset: int = 0,
+        sort_desc: bool = False,
     ) -> list[dict[str, Any]]:
         sql = (
             "SELECT timestamp_abs, text, confidence, audio_path, "
@@ -137,7 +138,9 @@ class SQLiteStorage:
         if text_query:
             sql += " AND LOWER(COALESCE(text, '')) LIKE ?"
             params.append(f"%{text_query.lower()}%")
-        sql += " ORDER BY timestamp_abs ASC, audio_path ASC, segment_start_sec ASC LIMIT ? OFFSET ?"
+        
+        order = "DESC" if sort_desc else "ASC"
+        sql += f" ORDER BY timestamp_abs {order}, audio_path {order}, segment_start_sec {order} LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
         with self._connect() as conn:
