@@ -54,10 +54,15 @@ def load_transcriptions_sqlite(
     )
     total = storage.count_transcriptions(text_query=text_query, min_confidence=min_confidence)
     df = pd.DataFrame(rows)
-    for col in ["timestamp_abs", "confidence", "text", "audio_path"]:
+    
+    # Assurer la présence des colonnes nécessaires
+    cols = ["timestamp_abs", "confidence", "text", "audio_path", "segment_start_sec", "vad_start_ms", "vad_end_ms"]
+    for col in cols:
         if col not in df.columns: df[col] = None
+        
     df["timestamp_dt"] = pd.to_datetime(df["timestamp_abs"], errors="coerce")
     df["confidence"] = pd.to_numeric(df["confidence"], errors="coerce")
+    df["segment_start_sec"] = pd.to_numeric(df["segment_start_sec"], errors="coerce").fillna(0)
     return df, total
 
 def confidence_badge(conf: float | None) -> str:
@@ -76,7 +81,6 @@ def render_health_indicator(snapshot: dict[str, Any]) -> None:
     healthy = snapshot.get("overall_healthy", False)
     label = "🟢 Santé OK" if healthy else "🔴 Problème"
     
-    # Placement en haut à droite via colonnes
     _, col_btn = st.columns([8, 2])
     with col_btn:
         if st.button(label, use_container_width=True, help="Voir le monitoring détaillé"):
@@ -118,7 +122,6 @@ def render_transcriptions_tab() -> None:
         st.subheader("Filtres")
         text_query = st.text_input("Recherche", value="").strip().lower()
         
-        # Slider avec label dynamique pour indiquer quand le filtre est désactivé
         conf_threshold = st.slider(
             "Confiance min.", 
             0.0, 1.0, 0.0, 0.01,
@@ -156,17 +159,57 @@ def render_transcriptions_tab() -> None:
 
     st.caption(f"Total: {total} lignes")
     
-    for idx, row in df.iterrows():
+    # Calcul des timestamps exacts par ligne
+    df["line_ts_dt"] = df["timestamp_dt"] + pd.to_timedelta(df["segment_start_sec"], unit='s')
+
+    # Regroupement par segment (audio_path)
+    groups = []
+    current_path = None
+    for _, row in df.iterrows():
+        if row["audio_path"] != current_path:
+            current_path = row["audio_path"]
+            groups.append({
+                "audio_path": current_path,
+                "rows": [],
+                "base_ts": row["timestamp_dt"],
+                "vad_start_ms": row["vad_start_ms"],
+                "vad_end_ms": row["vad_end_ms"]
+            })
+        groups[-1]["rows"].append(row)
+
+    for group in groups:
         with st.container():
-            ts = format_timestamp_fr(row["timestamp_abs"])
-            st.markdown(f"**{ts}** • {confidence_badge(row['confidence'])}")
-            st.write(row["text"])
+            # Préparation des données du segment
+            rows = group["rows"]
+            confidences = [r["confidence"] for r in rows if pd.notna(r["confidence"])]
+            avg_conf = sum(confidences) / len(confidences) if confidences else None
             
-            audio_path = resolve_audio_path(str(row["audio_path"] or ""))
+            # Calcul de la plage horaire du segment
+            start_dt = group["base_ts"]
+            duration_sec = (group["vad_end_ms"] - group["vad_start_ms"]) / 1000.0 if (pd.notna(group["vad_start_ms"]) and pd.notna(group["vad_end_ms"])) else 0
+            
+            if pd.notna(start_dt):
+                end_dt = start_dt + pd.to_timedelta(duration_sec, unit='s')
+                date_part = start_dt.strftime("%d/%m/%Y")
+                time_range = f"{start_dt.strftime('%H:%M:%S')} - {end_dt.strftime('%H:%M:%S')}"
+                title_str = f"**{date_part} {time_range}** • {confidence_badge(avg_conf)}"
+            else:
+                title_str = f"Segment inconnu • {confidence_badge(avg_conf)}"
+            
+            # Affichage du titre du segment
+            st.markdown(title_str)
+            
+            # Affichage des lignes de texte
+            for r in rows:
+                l_ts = r["line_ts_dt"].strftime("%H:%M:%S") if pd.notna(r["line_ts_dt"]) else "??:??:??"
+                st.markdown(f"**{l_ts}** - {r['text']}")
+            
+            # Lecteur audio
+            audio_path = resolve_audio_path(str(group["audio_path"] or ""))
             if audio_path.exists():
                 st.audio(str(audio_path), format="audio/wav")
             else:
-                st.info(f"Fichier audio manquant: `{audio_path.name}`")
+                st.caption(f"Audio manquant : `{audio_path.name}`")
             
             st.divider()
 
@@ -174,16 +217,12 @@ def main() -> None:
     st.set_page_config(page_title="Écoute", layout="wide", initial_sidebar_state="expanded")
     inject_local_css(CSS_FILE)
     
-    # État par défaut du menu
     if "nav_menu" not in st.session_state:
         st.session_state["nav_menu"] = "Transcriptions"
 
     snapshot = get_monitoring_snapshot()
-    
-    # Indicateur discret en haut
     render_health_indicator(snapshot)
 
-    # Menu de navigation sidebar
     with st.sidebar:
         st.title("🎧 Écoute")
         selected = st.radio(
