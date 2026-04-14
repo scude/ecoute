@@ -149,7 +149,7 @@ Main sections:
 
 - `paths`: input/output paths
 - `pipeline`: interval and backoff
-- `whisper`: model and inference parameters
+- `whisper`: model and inference parameters (including `banned_phrases` for filtering hallucinations)
 - `vad`: speech detection parameters
 
 ### 5.2 Supported environment variables
@@ -202,6 +202,8 @@ Main sections:
   Minimum log-probability threshold to accept an output.
 - `WHISPER_NO_SPEECH_THRESHOLD`  
   Whisper-level no-speech detection threshold.
+- `WHISPER_BANNED_PHRASES`  
+  Comma-separated list of phrases to hide from the UI (e.g., "Merci.,Sous-titrage ST' 501"). Only excludes segments matching the exact phrase.
 
 #### VAD
 
@@ -304,7 +306,8 @@ The lockfile prevents overlap if a previous run is still active.
 - text filtering,
 - confidence threshold,
 - audio snippet playback (`st.audio`),
-- explicit message when the WAV file no longer exists.
+- explicit message when the WAV file no longer exists,
+- **filtering of banned phrases** (hallucinations) as defined in the configuration.
 
 ---
 
