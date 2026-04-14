@@ -117,7 +117,15 @@ def render_transcriptions_tab() -> None:
         st.divider()
         st.subheader("Filtres")
         text_query = st.text_input("Recherche", value="").strip().lower()
-        conf_threshold = st.slider("Confiance min.", 0.0, 1.0, 0.0, 0.01)
+        
+        # Slider avec label dynamique pour indiquer quand le filtre est désactivé
+        conf_threshold = st.slider(
+            "Confiance min.", 
+            0.0, 1.0, 0.0, 0.01,
+            format="%.2f"
+        )
+        if conf_threshold == 0.0:
+            st.caption("Filtre de confiance : **Désactivé**")
         
         sort_order = st.selectbox(
             "Ordre chronologique",

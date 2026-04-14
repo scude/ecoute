@@ -121,35 +121,58 @@ class SQLiteStorage:
                 values,
             )
 
+    from typing import Any
+
     def query_transcriptions(
-        self,
-        text_query: str = "",
-        min_confidence: float = 0.0,
-        limit: int = 200,
-        offset: int = 0,
-        sort_desc: bool = False,
+            self,
+            *,  # Force l'utilisation des noms d'arguments (ex: min_confidence=0.1)
+            text_query: str = "",
+            min_confidence: float = None,  # Par défaut à None pour une gestion propre
+            limit: int = 200,
+            offset: int = 0,
+            sort_desc: bool = False,
     ) -> list[dict[str, Any]]:
         sql = (
             "SELECT timestamp_abs, text, confidence, audio_path, "
             "vad_start_ms, vad_end_ms, segment_start_sec, segment_end_sec "
-            "FROM transcriptions WHERE COALESCE(confidence, 0.0) >= ?"
+            "FROM transcriptions WHERE 1=1"
         )
-        params: list[Any] = [min_confidence]
-        if text_query:
+        params: list[Any] = []
+
+        # Correction : On filtre si min_confidence est défini, même si c'est 0.0
+        if min_confidence is not None:
+            sql += " AND COALESCE(confidence, 0.0) >= ?"
+            params.append(min_confidence)
+
+        # Correction : On ne filtre le texte que s'il n'est pas vide
+        if text_query and text_query.strip():
             sql += " AND LOWER(COALESCE(text, '')) LIKE ?"
             params.append(f"%{text_query.lower()}%")
-        
+
         order = "DESC" if sort_desc else "ASC"
-        sql += f" ORDER BY timestamp_abs {order}, audio_path {order}, segment_start_sec {order} LIMIT ? OFFSET ?"
+
+        # On ajoute un tri secondaire pour garantir un ordre stable même si les timestamps sont identiques
+        sql += (
+            f" ORDER BY timestamp_abs {order}, confidence {order}, "
+            f"audio_path {order}, segment_start_sec {order} "
+            f"LIMIT ? OFFSET ?"
+        )
         params.extend([limit, offset])
 
         with self._connect() as conn:
+            # fetchall() renvoie des objets Row qui se comportent comme des dicts
             rows = conn.execute(sql, params).fetchall()
+
         return [dict(row) for row in rows]
 
     def count_transcriptions(self, text_query: str = "", min_confidence: float = 0.0) -> int:
-        sql = "SELECT COUNT(*) AS c FROM transcriptions WHERE COALESCE(confidence, 0.0) >= ?"
-        params: list[Any] = [min_confidence]
+        sql = "SELECT COUNT(*) AS c FROM transcriptions WHERE 1=1"
+        params: list[Any] = []
+
+        if min_confidence > 0:
+            sql += " AND COALESCE(confidence, 0.0) >= ?"
+            params.append(min_confidence)
+
         if text_query:
             sql += " AND LOWER(COALESCE(text, '')) LIKE ?"
             params.append(f"%{text_query.lower()}%")
