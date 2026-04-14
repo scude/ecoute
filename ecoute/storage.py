@@ -11,8 +11,13 @@ DEFAULT_DB_PATH = Path("transcriptions/transcriptions.sqlite")
 
 
 class SQLiteStorage:
-    def __init__(self, db_path: Path = DEFAULT_DB_PATH) -> None:
+    def __init__(
+        self, 
+        db_path: Path = DEFAULT_DB_PATH,
+        banned_phrases: list[str] | None = None
+    ) -> None:
         self.db_path = db_path
+        self.banned_phrases = banned_phrases or []
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
@@ -121,8 +126,6 @@ class SQLiteStorage:
                 values,
             )
 
-    from typing import Any
-
     def query_transcriptions(
             self,
             *,  # Force l'utilisation des noms d'arguments (ex: min_confidence=0.1)
@@ -148,6 +151,13 @@ class SQLiteStorage:
         if text_query and text_query.strip():
             sql += " AND LOWER(COALESCE(text, '')) LIKE ?"
             params.append(f"%{text_query.lower()}%")
+            
+        # Filtre des phrases bannies (exact match)
+        if self.banned_phrases:
+            sql += " AND TRIM(COALESCE(text, '')) NOT IN ({})".format(
+                ",".join(["?"] * len(self.banned_phrases))
+            )
+            params.extend(self.banned_phrases)
 
         order = "DESC" if sort_desc else "ASC"
 
@@ -176,6 +186,13 @@ class SQLiteStorage:
         if text_query:
             sql += " AND LOWER(COALESCE(text, '')) LIKE ?"
             params.append(f"%{text_query.lower()}%")
+            
+        # Filtre des phrases bannies (exact match)
+        if self.banned_phrases:
+            sql += " AND TRIM(COALESCE(text, '')) NOT IN ({})".format(
+                ",".join(["?"] * len(self.banned_phrases))
+            )
+            params.extend(self.banned_phrases)
 
         with self._connect() as conn:
             row = conn.execute(sql, params).fetchone()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import yaml
 
@@ -36,6 +36,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "compression_ratio_threshold": 1.8,
         "log_prob_threshold": -0.9,
         "no_speech_threshold": 0.3,
+        "banned_phrases": [],
     },
     "vad": {
         "sample_rate": 16000,
@@ -45,6 +46,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "speech_pad_ms": 200,
     },
 }
+
+def _parse_list(v: str) -> List[str]:
+    if not v:
+        return []
+    return [s.strip() for s in v.split(",")]
 
 ENV_OVERRIDES = {
     "PIPELINE_INTERVAL_SECONDS": ("pipeline", "interval_seconds", int),
@@ -75,6 +81,7 @@ ENV_OVERRIDES = {
     ),
     "WHISPER_LOG_PROB_THRESHOLD": ("whisper", "log_prob_threshold", float),
     "WHISPER_NO_SPEECH_THRESHOLD": ("whisper", "no_speech_threshold", float),
+    "WHISPER_BANNED_PHRASES": ("whisper", "banned_phrases", _parse_list),
     "VAD_SAMPLE_RATE": ("vad", "sample_rate", int),
     "VAD_THRESHOLD": ("vad", "threshold", float),
     "VAD_MIN_SPEECH_DURATION_MS": ("vad", "min_speech_duration_ms", int),

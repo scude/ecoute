@@ -10,6 +10,7 @@ import streamlit as st
 
 from ecoute.monitoring import get_monitoring_snapshot
 from ecoute.storage import DEFAULT_DB_PATH, SQLiteStorage
+from ecoute.pipeline_config import load_config
 
 TRANSCRIPTIONS_PATH = Path("transcriptions/transcriptions.json")
 CSS_FILE = Path(__file__).parent / "styles" / "navigation.css"
@@ -43,7 +44,10 @@ def load_transcriptions_sqlite(
     page_number: int,
     sort_desc: bool = False
 ) -> tuple[pd.DataFrame, int]:
-    storage = SQLiteStorage(Path(db_path))
+    config = load_config()
+    banned_phrases = config.get("whisper", {}).get("banned_phrases", [])
+    
+    storage = SQLiteStorage(Path(db_path), banned_phrases=banned_phrases)
     offset = page_size * max(page_number - 1, 0)
     rows = storage.query_transcriptions(
         text_query=text_query, 
