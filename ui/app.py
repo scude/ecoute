@@ -35,14 +35,15 @@ def resolve_audio_path(audio_path_raw: str) -> Path:
                 return candidate
     return requested
 
-@st.cache_data
+@st.cache_data(ttl=60) # Ajout d'un TTL de sécurité
 def load_transcriptions_sqlite(
     db_path: str, 
     text_query: str, 
     min_confidence: float | None, 
     page_size: int, 
     page_number: int,
-    sort_desc: bool = False
+    sort_desc: bool = False,
+    db_mtime: float = 0.0  # Paramètre pour invalider le cache quand la DB change
 ) -> tuple[pd.DataFrame, int]:
     config = load_config()
     banned_phrases = config.get("whisper", {}).get("banned_phrases", [])
@@ -160,13 +161,17 @@ def render_transcriptions_tab() -> None:
         st.error("Base de données introuvable. Lancez le pipeline.")
         return
 
+    # On récupère la date de modification pour invalider le cache Streamlit
+    db_mtime = DEFAULT_DB_PATH.stat().st_mtime
+
     df, total = load_transcriptions_sqlite(
         db_path, 
         text_query, 
         conf_threshold if conf_threshold > 0 else None, 
         int(page_size), 
         int(page_number),
-        sort_desc=sort_desc
+        sort_desc=sort_desc,
+        db_mtime=db_mtime
     )
     if df.empty:
         st.warning("Aucun résultat.")
