@@ -39,7 +39,7 @@ def resolve_audio_path(audio_path_raw: str) -> Path:
 def load_transcriptions_sqlite(
     db_path: str, 
     text_query: str, 
-    min_confidence: float, 
+    min_confidence: float | None, 
     page_size: int, 
     page_number: int,
     sort_desc: bool = False
@@ -152,7 +152,7 @@ def render_transcriptions_tab() -> None:
     df, total = load_transcriptions_sqlite(
         db_path, 
         text_query, 
-        conf_threshold, 
+        conf_threshold if conf_threshold > 0 else None, 
         int(page_size), 
         int(page_number),
         sort_desc=sort_desc

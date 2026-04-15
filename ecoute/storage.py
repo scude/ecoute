@@ -128,9 +128,9 @@ class SQLiteStorage:
 
     def query_transcriptions(
             self,
-            *,  # Force l'utilisation des noms d'arguments (ex: min_confidence=0.1)
+            *,
             text_query: str = "",
-            min_confidence: float = None,  # Par défaut à None pour une gestion propre
+            min_confidence: float | None = None,
             limit: int = 200,
             offset: int = 0,
             sort_desc: bool = False,
@@ -142,12 +142,10 @@ class SQLiteStorage:
         )
         params: list[Any] = []
 
-        # Correction : On filtre si min_confidence est défini, même si c'est 0.0
-        if min_confidence is not None:
+        if min_confidence is not None and min_confidence > 0:
             sql += " AND COALESCE(confidence, 0.0) >= ?"
             params.append(min_confidence)
 
-        # Correction : On ne filtre le texte que s'il n'est pas vide
         if text_query and text_query.strip():
             sql += " AND LOWER(COALESCE(text, '')) LIKE ?"
             params.append(f"%{text_query.lower()}%")
@@ -175,15 +173,15 @@ class SQLiteStorage:
 
         return [dict(row) for row in rows]
 
-    def count_transcriptions(self, text_query: str = "", min_confidence: float = 0.0) -> int:
+    def count_transcriptions(self, text_query: str = "", min_confidence: float | None = None) -> int:
         sql = "SELECT COUNT(*) AS c FROM transcriptions WHERE 1=1"
         params: list[Any] = []
 
-        if min_confidence > 0:
+        if min_confidence is not None and min_confidence > 0:
             sql += " AND COALESCE(confidence, 0.0) >= ?"
             params.append(min_confidence)
 
-        if text_query:
+        if text_query and text_query.strip():
             sql += " AND LOWER(COALESCE(text, '')) LIKE ?"
             params.append(f"%{text_query.lower()}%")
             
