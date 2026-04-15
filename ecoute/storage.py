@@ -134,9 +134,9 @@ class SQLiteStorage:
             limit: int = 200,
             offset: int = 0,
             sort_desc: bool = False,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, list[dict[str, Any]]]: # Modified return type
         sql = (
-            "SELECT timestamp_abs, text, confidence, audio_path, "
+            "SELECT segment_id, timestamp_abs, text, confidence, audio_path, " # Added segment_id
             "vad_start_ms, vad_end_ms, segment_start_sec, segment_end_sec "
             "FROM transcriptions WHERE 1=1"
         )
@@ -168,10 +168,18 @@ class SQLiteStorage:
         params.extend([limit, offset])
 
         with self._connect() as conn:
-            # fetchall() renvoie des objets Row qui se comportent comme des dicts
             rows = conn.execute(sql, params).fetchall()
 
-        return [dict(row) for row in rows]
+        # Group transcriptions by segment_id
+        grouped_transcriptions: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            row_dict = dict(row)
+            segment_id = row_dict.pop("segment_id") # Remove segment_id from individual transcription dict
+            if segment_id not in grouped_transcriptions:
+                grouped_transcriptions[segment_id] = []
+            grouped_transcriptions[segment_id].append(row_dict)
+
+        return grouped_transcriptions
 
     def count_transcriptions(self, text_query: str = "", min_confidence: float | None = None) -> int:
         sql = "SELECT COUNT(*) AS c FROM transcriptions WHERE 1=1"

@@ -49,18 +49,29 @@ def load_transcriptions_sqlite(
     
     storage = SQLiteStorage(Path(db_path), banned_phrases=banned_phrases)
     offset = page_size * max(page_number - 1, 0)
-    rows = storage.query_transcriptions(
+    
+    # query_transcriptions returns a dict[segment_id, list[transcription_dicts]]
+    # ordered according to the SQL query (sort_desc)
+    grouped_rows = storage.query_transcriptions(
         text_query=text_query, 
         min_confidence=min_confidence, 
         limit=page_size, 
         offset=offset,
         sort_desc=sort_desc
     )
-    total = storage.count_transcriptions(text_query=text_query, min_confidence=min_confidence)
-    df = pd.DataFrame(rows)
     
-    # Assurer la présence des colonnes nécessaires
-    cols = ["timestamp_abs", "confidence", "text", "audio_path", "segment_start_sec", "vad_start_ms", "vad_end_ms"]
+    # Flatten while preserving segment order
+    flattened_rows = []
+    for segment_id, transcriptions in grouped_rows.items():
+        for transcription in transcriptions:
+            transcription_with_segment_id = {"segment_id": segment_id, **transcription}
+            flattened_rows.append(transcription_with_segment_id)
+            
+    total = storage.count_transcriptions(text_query=text_query, min_confidence=min_confidence)
+    
+    df = pd.DataFrame(flattened_rows)
+    
+    cols = ["segment_id", "timestamp_abs", "confidence", "text", "audio_path", "segment_start_sec", "vad_start_ms", "vad_end_ms"]
     for col in cols:
         if col not in df.columns: df[col] = None
         
@@ -166,31 +177,20 @@ def render_transcriptions_tab() -> None:
     # Calcul des timestamps exacts par ligne
     df["line_ts_dt"] = df["timestamp_dt"] + pd.to_timedelta(df["segment_start_sec"], unit='s')
 
-    # Regroupement par segment (audio_path)
-    groups = []
-    current_path = None
-    for _, row in df.iterrows():
-        if row["audio_path"] != current_path:
-            current_path = row["audio_path"]
-            groups.append({
-                "audio_path": current_path,
-                "rows": [],
-                "base_ts": row["timestamp_dt"],
-                "vad_start_ms": row["vad_start_ms"],
-                "vad_end_ms": row["vad_end_ms"]
-            })
-        groups[-1]["rows"].append(row)
-
-    for group in groups:
+    # Regroupement par segment_id
+    # IMPORTANT: sort=False preserves the order from the DataFrame (which is already sorted by SQL)
+    for segment_id, group_df in df.groupby("segment_id", sort=False):
         with st.container():
-            # Préparation des données du segment
-            rows = group["rows"]
-            confidences = [r["confidence"] for r in rows if pd.notna(r["confidence"])]
+            # Sort rows within the segment by start time (always ASC within a segment)
+            group_df = group_df.sort_values(by="segment_start_sec")
+
+            confidences = group_df["confidence"].dropna().tolist()
             avg_conf = sum(confidences) / len(confidences) if confidences else None
             
-            # Calcul de la plage horaire du segment
-            start_dt = group["base_ts"]
-            duration_sec = (group["vad_end_ms"] - group["vad_start_ms"]) / 1000.0 if (pd.notna(group["vad_start_ms"]) and pd.notna(group["vad_end_ms"])) else 0
+            first_row = group_df.iloc[0]
+            
+            start_dt = first_row["timestamp_dt"]
+            duration_sec = (first_row["vad_end_ms"] - first_row["vad_start_ms"]) / 1000.0 if (pd.notna(first_row["vad_start_ms"]) and pd.notna(first_row["vad_end_ms"])) else 0
             
             if pd.notna(start_dt):
                 end_dt = start_dt + pd.to_timedelta(duration_sec, unit='s')
@@ -200,16 +200,13 @@ def render_transcriptions_tab() -> None:
             else:
                 title_str = f"Segment inconnu • {confidence_badge(avg_conf)}"
             
-            # Affichage du titre du segment
             st.markdown(title_str)
             
-            # Affichage des lignes de texte
-            for r in rows:
+            for _, r in group_df.iterrows():
                 l_ts = r["line_ts_dt"].strftime("%H:%M:%S") if pd.notna(r["line_ts_dt"]) else "??:??:??"
                 st.markdown(f"**{l_ts}** - {r['text']}")
             
-            # Lecteur audio
-            audio_path = resolve_audio_path(str(group["audio_path"] or ""))
+            audio_path = resolve_audio_path(str(first_row["audio_path"] or ""))
             if audio_path.exists():
                 st.audio(str(audio_path), format="audio/wav")
             else:
